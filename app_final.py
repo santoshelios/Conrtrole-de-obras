@@ -198,8 +198,10 @@ with aba_view[0]:
         fig_hist.update_xaxes(
             type='date',
             tickformat='%d/%m/%Y',
-            dtick="D1" # Força intervalo de 1 dia
+            dtick="D1", # Força intervalo de 1 dia
+            tickangle=-45
         )
+        fig_hist.update_layout(margin=dict(b=100))
         st.plotly_chart(fig_hist, use_container_width=True)
         
         st.markdown("---")
