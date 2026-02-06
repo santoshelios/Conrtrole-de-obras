@@ -152,8 +152,8 @@ if st.session_state.logged_in:
                 nome = st.text_input("Nome Completo *")
                 func = st.selectbox("Função/Cargo *", funcoes_disponiveis)
             with c2:
-                abrev = st.text_input("Abreviação")
-                adm = st.date_input("Data de Admissão")
+                abrev = st.text_input("Função Abreviada")
+                adm = st.date_input("Data de Admissão",format="DD/MM/YYYY")
                 mo = st.selectbox("Tipo de MO", ["MOD", "MOI"])
                 status = st.selectbox("Status", ["Ativo", "Inativo"])
             if st.form_submit_button("Cadastrar Colaborador"):
