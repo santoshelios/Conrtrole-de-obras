@@ -67,8 +67,6 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'form_key' not in st.session_state:
     st.session_state.form_key = 0
-if 'filtro_funcao' not in st.session_state:
-    st.session_state.filtro_funcao = None
 
 # --- FUNÇÕES DE AUXÍLIO ---
 def reset_form():
@@ -102,7 +100,7 @@ def horas_para_decimal(h_m):
 now = datetime.now()
 st.markdown(f"<div class='clock-style'>{now.strftime('%d/%m/%Y - %H:%M')}</div>", unsafe_allow_html=True)
 
-# --- BARRA LATERAL (LOGIN) ---
+# --- BARRA LATERAL (LOGIN COM SECRETS) ---
 with st.sidebar:
     st.markdown("<h2 class='header-style'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
     
@@ -111,14 +109,23 @@ with st.sidebar:
             user = st.text_input("Usuário")
             password = st.text_input("Senha", type="password")
             if st.button("Entrar"):
-                if hasattr(db, 'check_login'):
-                    if db.check_login(user, password):
+                try:
+                    admin_user = st.secrets["credentials"]["admin_user"]
+                    admin_password = st.secrets["credentials"]["admin_password"]
+                    if user == admin_user and password == admin_password:
                         st.session_state.logged_in = True
                         st.success("Acesso Autorizado!")
-                        time.sleep(1)
-                        st.rerun()
+                        time.sleep(1); st.rerun()
                     else:
                         st.error("Credenciais inválidas")
+                except:
+                    if hasattr(db, 'check_login'):
+                        if db.check_login(user, password):
+                            st.session_state.logged_in = True
+                            st.success("Acesso Autorizado!")
+                            time.sleep(1); st.rerun()
+                        else:
+                            st.error("Credenciais inválidas")
     else:
         st.write(f"Conectado como: **Gestor de Projeto**")
         if st.button("Sair"):
@@ -133,16 +140,114 @@ st.markdown("<h1 class='header-style'>🏗️ GRUPO SANTIN - Controle de Obras</
 
 # Definição das Abas
 if st.session_state.logged_in:
-    tabs_list = ["➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro"]
+    tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro"]
 else:
-    tabs_list = ["📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas"]
+    tabs_list = ["📅 Efetivo Diário", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas"]
 
 aba_view = st.tabs(tabs_list)
 
 # --- LÓGICA DE EXIBIÇÃO ---
+
+# ABA 0: EFETIVO DIÁRIO
+with aba_view[0]:
+    st.subheader("📅 Controle de Efetivo Diário")
+    
+    if st.session_state.logged_in:
+        with st.expander("📤 Upload de Efetivo (Excel - Aba 'Efetivo')"):
+            u_file = st.file_uploader("Selecione o arquivo Excel", type=['xlsx'])
+            if u_file and st.button("Processar Arquivo"):
+                try:
+                    # Lê especificamente a aba 'Efetivo'
+                    df_u = pd.read_excel(u_file, sheet_name='Efetivo')
+                    
+                    # Verifica se as colunas necessárias existem (sem acentos conforme solicitado)
+                    cols_required = ['Data', 'Matricula', 'Nome', 'Funcao', 'Status', 'Situacao']
+                    if all(c in df_u.columns for c in cols_required):
+                        # Limpa dados das datas que estão sendo subidas para evitar duplicidade
+                        datas_no_arquivo = df_u['Data'].unique()
+                        for d in datas_no_arquivo:
+                            db.delete_efetivo_por_data(d)
+                        
+                        if db.add_efetivo_diario_batch(df_u):
+                            st.success("Efetivo carregado com sucesso!")
+                            time.sleep(1); st.rerun()
+                    else:
+                        st.error(f"O arquivo deve conter as colunas: {', '.join(cols_required)}")
+                except Exception as e:
+                    st.error(f"Erro ao processar: {e}")
+
+    # Visualização dos Dados
+    dados_efetivo = db.get_efetivo_diario()
+    if dados_efetivo:
+        df_ef = pd.DataFrame(dados_efetivo, columns=["Data", "Matrícula", "Nome", "Função", "Status", "Situação"])
+        df_ef['Data'] = pd.to_datetime(df_ef['Data'])
+        
+        # 1. Gráfico de Linhas (Histórico Status 1 - Presente)
+        st.markdown("### 📈 Histórico de Efetivo (Presentes)")
+        c1, c2 = st.columns(2)
+        with c1: d_ini = st.date_input("Data Início", value=df_ef['Data'].min())
+        with c2: d_fim = st.date_input("Data Fim", value=df_ef['Data'].max())
+        
+        df_hist = df_ef[(df_ef['Data'] >= pd.Timestamp(d_ini)) & (df_ef['Data'] <= pd.Timestamp(d_fim)) & (df_ef['Status'] == 1)]
+        df_hist_count = df_hist.groupby('Data').size().reset_index(name='Quantidade')
+        
+        fig_hist = px.line(df_hist_count, x='Data', y='Quantidade', markers=True, 
+                          title="Efetivo Presente ao Longo do Tempo", color_discrete_sequence=['#FFD700'],
+                          text='Quantidade')
+        fig_hist.update_traces(textposition="top center", textfont=dict(color="black", size=12))
+        fig_hist.update_xaxes(
+            type='date',
+            tickformat='%d/%m/%Y',
+            dtick="D1" # Força intervalo de 1 dia
+        )
+        st.plotly_chart(fig_hist, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # 2. Gráfico de Barras Horizontais (Status do Dia - Outras Situações)
+        st.markdown("### 📊 Status do Efetivo (Último Registro)")
+        data_recente = df_ef['Data'].max()
+        df_recente = df_ef[df_ef['Data'] == data_recente]
+        
+        # Filtrar apenas status que NÃO são 1 para o gráfico de barras horizontais
+        df_status_dia = df_recente[df_recente['Status'] != 1].groupby('Situação').size().reset_index(name='Total')
+        
+        col_graf, col_tab = st.columns([1, 1])
+        
+        with col_graf:
+            fig_status = px.bar(df_status_dia, y='Situação', x='Total', orientation='h', 
+                               title=f"Distribuição de Situações - {data_recente.strftime('%d/%m/%Y')}",
+                               color_discrete_sequence=['#000000'], text_auto=True)
+            fig_status.update_layout(yaxis={'categoryorder':'total ascending'})
+            sel_status = st.plotly_chart(fig_status, use_container_width=True, on_select="rerun")
+        
+        with col_tab:
+            sit_filtrada = None
+            if sel_status and "selection" in sel_status and "points" in sel_status["selection"] and sel_status["selection"]["points"]:
+                sit_filtrada = sel_status["selection"]["points"][0]["y"]
+                st.markdown(f"#### Detalhes: {sit_filtrada}")
+                
+                df_detalhe = df_recente[df_recente['Situação'] == sit_filtrada]
+                
+                # Para a hierarquia, precisamos da Abreviação do cadastro original
+                dados_func = db.get_funcionarios()
+                dict_abrev = {f[0]: f[3].upper() if f[3] else f[2].upper() for f in dados_func}
+                df_detalhe['Abrev'] = df_detalhe['Matrícula'].map(dict_abrev).fillna(df_detalhe['Função'])
+                
+                abrevs = sorted(df_detalhe['Abrev'].unique())
+                for a in abrevs:
+                    with st.expander(f"🔸 {a}"):
+                        nomes = df_detalhe[df_detalhe['Abrev'] == a]['Nome'].tolist()
+                        for n in nomes:
+                            st.write(f"- {n}")
+            else:
+                st.info("Clique em uma barra do gráfico ao lado para ver os nomes.")
+    else:
+        st.info("Nenhum dado de efetivo diário carregado.")
+
 if st.session_state.logged_in:
-    # 0: NOVO COLABORADOR
-    with aba_view[0]:
+    # 1: NOVO COLABORADOR
+    with aba_view[1]:
         st.subheader("➕ Cadastro de Novo Colaborador")
         funcoes_disponiveis = db.get_funcoes()
         with st.form(key=f"form_novo_colab_{st.session_state.form_key}"):
@@ -164,8 +269,8 @@ if st.session_state.logged_in:
                     else: st.error(f"Erro: {msg}")
                 else: st.error("Verifique os campos obrigatórios (Matrícula deve ser numérica).")
 
-    # 1: APONTAR HORAS
-    with aba_view[1]:
+    # 2: APONTAR HORAS
+    with aba_view[2]:
         st.subheader("✍️ Novo Apontamento Diário")
         dados_func = db.get_funcionarios()
         mats = [d[0] for d in dados_func]
@@ -201,9 +306,9 @@ if st.session_state.logged_in:
                     reset_form(); time.sleep(1); st.rerun()
                 else: st.warning("Preencha os campos obrigatórios.")
     
-    idx_offset = 2
+    idx_offset = 3
 else:
-    idx_offset = 0
+    idx_offset = 1
 
 # DASHBOARD EFETIVO
 with aba_view[0 + idx_offset]:
@@ -215,18 +320,13 @@ with aba_view[0 + idx_offset]:
         with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['Status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
         with m3: st.markdown(f"<div class='metric-card'><h3>Inativos/Desligados</h3><h2 style='color: red;'>{len(df[df['Status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
         
-        # Agrupamento pela coluna Abrev. (Abreviação)
         df['Abrev_Upper'] = df['Abrev.'].str.upper()
         counts = df['Abrev_Upper'].value_counts().reset_index()
         counts.columns = ['Função', 'Quantidade']
         fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Agrupado por Abreviação)", color_discrete_sequence=['#FFD700'], text_auto=True)
         fig.update_layout(
             plot_bgcolor='white',
-            xaxis=dict(
-                tickangle=-45,
-                automargin=True,
-                tickfont=dict(size=12)
-            ),
+            xaxis=dict(tickangle=-45, automargin=True, tickfont=dict(size=12)),
             margin=dict(l=50, r=50, b=120, t=50)
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -248,55 +348,51 @@ with aba_view[1 + idx_offset]:
         
         df_filtrado = df_ap[df_ap['Mes_Ano'] == mes_sel].sort_values('Data')
         
-        # Gráfico de Linha (Horas por Dia)
         df_dia = df_filtrado.groupby('Data')['Horas_Dec'].sum().reset_index()
         fig_dia = go.Figure()
         fig_dia.add_trace(go.Scatter(
             x=df_dia['Data'], y=df_dia['Horas_Dec'], mode='lines+markers+text',
             line_shape='spline', text=[f"{h:.1f}h" for h in df_dia['Horas_Dec']],
-            textposition="top center", marker=dict(size=10, color='#000000'),
+            textposition="top center", 
+            textfont=dict(color="black", size=12),
+            marker=dict(size=10, color='#000000'),
             line=dict(width=3, color='#FFD700'), name="Horas"
         ))
-        fig_dia.update_layout(title=f"Horas por Dia - {mes_sel}", xaxis=dict(tickformat="%d"), template="plotly_white")
+        fig_dia.update_layout(
+            title=f"Horas por Dia - {mes_sel}", 
+            xaxis=dict(
+                type='date',
+                tickformat="%d/%m/%Y",
+                dtick="D1" # Força intervalo de 1 dia para não mostrar horas
+            ), 
+            template="plotly_white"
+        )
         st.plotly_chart(fig_dia, use_container_width=True)
         
-        # Interatividade: Filtro por Função
         st.markdown("---")
         st.markdown("### 🔍 Detalhamento Interativo")
         
-        # Para o gráfico de produtividade, precisamos buscar a Abreviação de cada colaborador
         dados_func = db.get_funcionarios()
         dict_abrev = {f[0]: f[3].upper() if f[3] else f[2].upper() for f in dados_func}
-        
         df_filtrado['Abrev'] = df_filtrado['Matrícula'].map(dict_abrev)
         
-        # Gráfico de Funções (Interativo e Agrupado por Abreviação)
         df_f = df_filtrado.groupby('Abrev')['Horas_Dec'].sum().reset_index()
         df_f.columns = ['Função', 'Horas_Dec']
         fig_func = px.bar(df_f, x='Função', y='Horas_Dec', title="Horas por Função (Agrupado por Abreviação - Clique para filtrar)", 
                          color_discrete_sequence=['#FFD700'], text_auto='.1f')
         fig_func.update_layout(
             clickmode='event+select',
-            xaxis=dict(
-                tickangle=-45,
-                automargin=True,
-                tickfont=dict(size=12)
-            ),
+            xaxis=dict(tickangle=-45, automargin=True, tickfont=dict(size=12)),
             margin=dict(l=50, r=50, b=120, t=50)
         )
         
-        # Captura o clique no gráfico de funções
         selected_points = st.plotly_chart(fig_func, use_container_width=True, on_select="rerun")
         
-        # Lógica de filtragem baseada na seleção (usa a Abreviação)
         filtro_func = None
-        if selected_points and "selection" in selected_points and "points" in selected_points["selection"]:
-            points = selected_points["selection"]["points"]
-            if points:
-                filtro_func = points[0]["x"]
-                st.info(f"Filtrando por Função: **{filtro_func}**")
+        if selected_points and "selection" in selected_points and "points" in selected_points["selection"] and selected_points["selection"]["points"]:
+            filtro_func = selected_points["selection"]["points"][0]["x"]
+            st.info(f"Filtrando por Função: **{filtro_func}**")
         
-        # Gráfico de Equipamentos (Filtrado pela Abreviação ou Geral)
         if filtro_func:
             df_e_data = df_filtrado[df_filtrado['Abrev'] == filtro_func]
             titulo_e = f"Horas por Equipamento - Função: {filtro_func}"
@@ -308,19 +404,13 @@ with aba_view[1 + idx_offset]:
         fig_equip = px.bar(df_e, x='Equipamento', y='Horas_Dec', title=titulo_e, 
                           color_discrete_sequence=['#000000'], text_auto='.1f')
         fig_equip.update_layout(
-            xaxis=dict(
-                tickangle=-45,
-                automargin=True,
-                tickfont=dict(size=12)
-            ),
+            xaxis=dict(tickangle=-45, automargin=True, tickfont=dict(size=12)),
             margin=dict(l=50, r=50, b=120, t=50)
         )
         st.plotly_chart(fig_equip, use_container_width=True)
         
         if filtro_func:
-            if st.button("Limpar Filtro"):
-                st.rerun()
-                
+            if st.button("Limpar Filtro"): st.rerun()
     else:
         st.info("Sem dados de produtividade registrados.")
 
@@ -340,134 +430,77 @@ with aba_view[2 + idx_offset]:
 # REGISTROS DE HORAS
 with aba_view[3 + idx_offset]:
     st.subheader("⏱️ Histórico de Apontamentos")
-    # Usar a nova função que traz o ID para permitir exclusão precisa
-    aponts_raw = db.get_apontamentos_com_id() if hasattr(db, 'get_apontamentos_com_id') else []
-    
+    aponts_raw = db.get_apontamentos_com_id()
     if aponts_raw:
         df_ap_full = pd.DataFrame(aponts_raw, columns=["ID", "Matrícula", "Nome", "Função", "Equipamento", "Atividade", "Entrada", "S. Almoço", "R. Almoço", "Saída", "Total", "Data"])
-        
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            d_f = st.date_input("Filtrar Data", value=None, key="filtro_data_hist")
-        
+        d_f = st.date_input("Filtrar Data", value=None, key="filtro_data_hist")
         df_display = df_ap_full.copy()
-        if d_f:
-            df_display = df_display[df_display['Data'] == str(d_f)]
+        if d_f: df_display = df_display[df_display['Data'] == str(d_f)]
+        st.dataframe(df_display.tail(20).applymap(lambda x: str(x).upper() if pd.notnull(x) else x), use_container_width=True)
         
-        # Mostrar os últimos 20 registros
-        df_ap_up = df_display.tail(20).applymap(lambda x: str(x).upper() if pd.notnull(x) else x)
-        st.dataframe(df_ap_up, use_container_width=True)
-        
-        # Opção de Exclusão (Apenas Admin)
         if st.session_state.logged_in:
-            st.markdown("---")
-            st.markdown("### 🗑️ Gerenciar Registros (Admin)")
-            
-            with st.expander("Excluir Apontamentos"):
-                # Criar uma lista formatada para o selectbox
-                opcoes_excluir = []
-                for _, row in df_display.iterrows():
-                    opcoes_excluir.append(f"ID: {row['ID']} | {row['Data']} | {row['Nome']} | {row['Total']}h")
-                
-                sel_excluir = st.multiselect("Selecione os registros para excluir", opcoes_excluir)
-                
-                if st.button("Excluir Selecionados", type="secondary"):
+            with st.expander("🗑️ Excluir Apontamentos"):
+                opcoes_excluir = [f"ID: {row['ID']} | {row['Data']} | {row['Nome']} | {row['Total']}h" for _, row in df_display.iterrows()]
+                sel_excluir = st.multiselect("Selecione os registros", opcoes_excluir)
+                if st.button("Excluir Selecionados"):
                     if sel_excluir:
-                        ids_para_excluir = [int(s.split('|')[0].replace('ID: ', '').strip()) for s in sel_excluir]
-                        sucesso_count = 0
-                        for id_del in ids_para_excluir:
-                            if db.delete_apontamento_por_id(id_del):
-                                sucesso_count += 1
-                        
-                        if sucesso_count > 0:
-                            st.success(f"{sucesso_count} registro(s) excluído(s) com sucesso!")
-                            time.sleep(1)
-                            st.rerun()
-                    else:
-                        st.warning("Selecione ao menos um registro.")
+                        for s in sel_excluir:
+                            db.delete_apontamento_por_id(int(s.split('|')[0].replace('ID: ', '').strip()))
+                        st.success("Excluído!"); time.sleep(1); st.rerun()
     else:
         st.info("Nenhum apontamento registrado.")
 
-# ABAS EXCLUSIVAS ADMIN (Continuação)
+# ABAS EXCLUSIVAS ADMIN
 if st.session_state.logged_in:
-    with aba_view[6]: # GESTÃO FUNÇÕES
+    with aba_view[7]: # GESTÃO FUNÇÕES
         st.subheader("⚙️ Gestão de Funções")
         c1, c2 = st.columns([2, 1])
-        
         funcoes = db.get_funcoes()
-        with c1:
-            df_funcoes = pd.DataFrame([f.upper() for f in funcoes], columns=["Função"])
-            st.table(df_funcoes)
-            
+        with c1: st.table(pd.DataFrame([f.upper() for f in funcoes], columns=["Função"]))
         with c2:
-            st.markdown("#### Adicionar")
-            n_f = st.text_input("Nova Função", key="n_f_input")
+            n_f = st.text_input("Nova Função")
             if st.button("Salvar Função"):
                 if db.add_funcao(n_f): st.success("Salvo!"); st.rerun()
-            
-            st.markdown("---")
-            st.markdown("#### Remover")
-            f_del = st.selectbox("Selecionar Função para Remover", [""] + funcoes)
+            f_del = st.selectbox("Remover", [""] + funcoes)
             if st.button("Excluir Função"):
-                if f_del and f_del != "":
-                    if db.delete_funcao(f_del):
-                        st.success("Removido!")
-                        time.sleep(1)
-                        st.rerun()
-                else:
-                    st.warning("Selecione uma função.")
+                if f_del: db.delete_funcao(f_del); st.success("Removido!"); time.sleep(1); st.rerun()
 
-    with aba_view[7]: # GESTÃO EQUIPAMENTOS
+    with aba_view[8]: # GESTÃO EQUIPAMENTOS
         st.subheader("🚜 Gestão de Equipamentos")
         c1, c2 = st.columns([2, 1])
-        
         equips = db.get_equipamentos()
-        with c1:
-            df_equips = pd.DataFrame([e.upper() for e in equips], columns=["Equipamento"])
-            st.table(df_equips)
-            
+        with c1: st.table(pd.DataFrame([e.upper() for e in equips], columns=["Equipamento"]))
         with c2:
-            st.markdown("#### Adicionar")
-            n_e = st.text_input("Novo Equipamento", key="n_e_input")
+            n_e = st.text_input("Novo Equipamento")
             if st.button("Salvar Equipamento"):
                 if db.add_equipamento(n_e): st.success("Salvo!"); st.rerun()
-            
-            st.markdown("---")
-            st.markdown("#### Remover")
-            e_del = st.selectbox("Selecionar Equipamento para Remover", [""] + equips)
+            e_del = st.selectbox("Remover", [""] + equips)
             if st.button("Excluir Equipamento"):
-                if e_del and e_del != "":
-                    if db.delete_equipamento(e_del):
-                        st.success("Removido!")
-                        time.sleep(1)
-                        st.rerun()
-                else:
-                    st.warning("Selecione um equipamento.")
+                if e_del: db.delete_equipamento(e_del); st.success("Removido!"); time.sleep(1); st.rerun()
 
-    with aba_view[8]: # ATUALIZAR
+    with aba_view[9]: # ATUALIZAR
         st.subheader("✏️ Atualizar Cadastro")
         dados = db.get_funcionarios()
         mats = [d[0] for d in dados]
         if mats:
-            s_m = st.selectbox("Matrícula", mats, key="upd_sel")
+            s_m = st.selectbox("Matrícula", mats)
             f_d = next((f for f in dados if f[0] == s_m), None)
             if f_d:
-                with st.form(key=f"form_update_colab_{st.session_state.form_key}"):
+                with st.form(key=f"form_upd_{st.session_state.form_key}"):
                     u_n = st.text_input("Nome", value=f_d[1])
                     u_f = st.selectbox("Função", db.get_funcoes(), index=db.get_funcoes().index(f_d[2]) if f_d[2] in db.get_funcoes() else 0)
                     u_a = st.text_input("Abreviação", value=f_d[3])
                     u_d = st.date_input("Admissão", value=datetime.strptime(f_d[4], '%Y-%m-%d').date() if f_d[4] else datetime.now().date())
                     u_mo = st.selectbox("MO", ["MOD", "MOI"], index=0 if f_d[5] == "MOD" else 1)
                     u_st = st.selectbox("Status", ["Ativo", "Inativo"], index=0 if f_d[6] == "Ativo" else 1)
-                    
-                    if st.form_submit_button("Salvar Alterações"):
+                    if st.form_submit_button("Salvar"):
                         if db.update_funcionario(s_m, u_n, u_f, u_a, u_d, u_mo, u_st):
-                            st.success("Atualizado!"); reset_form(); time.sleep(1); st.rerun()
+                            st.success("Atualizado!"); time.sleep(1); st.rerun()
 
-    with aba_view[9]: # REMOVER
-        st.subheader("🗑️ Remover Registro de Colaborador")
+    with aba_view[10]: # REMOVER
+        st.subheader("🗑️ Remover Colaborador")
         mats = [d[0] for d in db.get_funcionarios()]
         if mats:
-            d_m = st.selectbox("Excluir Matrícula", mats, key="del_sel")
-            if st.button("Confirmar Exclusão de Colaborador"):
+            d_m = st.selectbox("Excluir Matrícula", mats)
+            if st.button("Confirmar Exclusão"):
                 if db.delete_funcionario(d_m): st.success("Removido!"); time.sleep(1); st.rerun()

@@ -54,10 +54,29 @@ def init_db():
     # Tabela de Usuários (Login)
     cursor.execute('CREATE TABLE IF NOT EXISTS usuarios (usuario TEXT PRIMARY KEY, senha TEXT)')
     
+    # Tabela de Efetivo Diário - Forçar recriação para garantir nomes sem acentos
+    # Vamos sempre garantir que a estrutura esteja limpa para evitar erros de coluna
+    try:
+        cursor.execute("SELECT situacao FROM efetivo_diario LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("DROP TABLE IF EXISTS efetivo_diario")
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS efetivo_diario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data TEXT,
+            matricula TEXT,
+            nome TEXT,
+            funcao TEXT,
+            status INTEGER,
+            situacao TEXT
+        )
+    ''')
+    
     # Insere usuário padrão se não existir
     cursor.execute("INSERT OR IGNORE INTO usuarios (usuario, senha) VALUES ('admin', '1234')")
     
-    # Insere algumas funções básicas se estiver vazio (apenas para o sistema não iniciar totalmente pelado de funções)
+    # Insere algumas funções básicas se estiver vazio
     cursor.execute("SELECT COUNT(*) FROM funcoes")
     if cursor.fetchone()[0] == 0:
         for f in ["ENCARREGADO", "MONTADOR", "SOLDADOR", "AJUDANTE", "TECNICO"]:
@@ -133,6 +152,14 @@ def add_funcao(nome):
         return True
     except: return False
 
+def delete_funcao(nome):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM funcoes WHERE nome = ?", (nome,))
+    conn.commit()
+    conn.close()
+    return True
+
 def get_equipamentos():
     conn = get_connection()
     cursor = conn.cursor()
@@ -168,6 +195,14 @@ def get_apontamentos():
     conn.close()
     return [list(row) for row in rows]
 
+def get_apontamentos_com_id():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, matricula, nome, funcao, equipamento, atividade, entrada, saida_almoco, retorno_almoco, saida_final, total_horas, data_apontamento FROM apontamentos")
+    rows = cursor.fetchall()
+    conn.close()
+    return [list(row) for row in rows]
+
 def add_apontamento(mat, nome, func, equip, ativ, ent, s_alm, r_alm, s_fin, total, data):
     conn = get_connection()
     cursor = conn.cursor()
@@ -178,38 +213,43 @@ def add_apontamento(mat, nome, func, equip, ativ, ent, s_alm, r_alm, s_fin, tota
     conn.close()
     return True
 
-def delete_funcao(nome):
+def delete_apontamento_por_id(apontamento_id):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM funcoes WHERE nome = ?", (nome,))
+    cursor.execute("DELETE FROM apontamentos WHERE id = ?", (apontamento_id,))
     conn.commit()
     conn.close()
     return True
 
-def delete_apontamento(matricula, data, total_horas):
-    """Exclui um apontamento específico baseado em matrícula, data e total de horas."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM apontamentos WHERE matricula = ? AND data_apontamento = ? AND total_horas = ?", 
-                   (matricula, str(data), total_horas))
-    conn.commit()
-    conn.close()
-    return True
+# --- FUNÇÕES DE EFETIVO DIÁRIO ---
 
-def get_apontamentos_com_id():
-    """Retorna apontamentos incluindo o ID para facilitar a exclusão precisa."""
+def add_efetivo_diario_batch(df):
+    """Insere múltiplos registros de efetivo diário de uma vez."""
+    try:
+        conn = get_connection()
+        # Mapear colunas do DataFrame para as colunas da tabela (usando nomes sem acentos conforme solicitado)
+        # DataFrame esperado: Data, Matricula, Nome, Funcao, Status, Situacao
+        df_to_db = df[['Data', 'Matricula', 'Nome', 'Funcao', 'Status', 'Situacao']].copy()
+        df_to_db.columns = ['data', 'matricula', 'nome', 'funcao', 'status', 'situacao']
+        df_to_db.to_sql('efetivo_diario', conn, if_exists='append', index=False)
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erro ao inserir batch: {e}")
+        return False
+
+def get_efetivo_diario():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, matricula, nome, funcao, equipamento, atividade, entrada, saida_almoco, retorno_almoco, saida_final, total_horas, data_apontamento FROM apontamentos")
+    cursor.execute("SELECT data, matricula, nome, funcao, status, situacao FROM efetivo_diario")
     rows = cursor.fetchall()
     conn.close()
     return [list(row) for row in rows]
 
-def delete_apontamento_por_id(apontamento_id):
-    """Exclui um apontamento pelo seu ID único."""
+def delete_efetivo_por_data(data):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM apontamentos WHERE id = ?", (apontamento_id,))
+    cursor.execute("DELETE FROM efetivo_diario WHERE data = ?", (str(data),))
     conn.commit()
     conn.close()
     return True
