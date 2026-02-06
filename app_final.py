@@ -152,8 +152,8 @@ if st.session_state.logged_in:
                 nome = st.text_input("Nome Completo *")
                 func = st.selectbox("Função/Cargo *", funcoes_disponiveis)
             with c2:
-                abrev = st.text_input("Função Abreviada")
-                adm = st.date_input("Data de Admissão",format="DD/MM/YYYY")
+                abrev = st.text_input("Abreviação")
+                adm = st.date_input("Data de Admissão")
                 mo = st.selectbox("Tipo de MO", ["MOD", "MOI"])
                 status = st.selectbox("Status", ["Ativo", "Inativo"])
             if st.form_submit_button("Cadastrar Colaborador"):
@@ -215,10 +215,20 @@ with aba_view[0 + idx_offset]:
         with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['Status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
         with m3: st.markdown(f"<div class='metric-card'><h3>Inativos/Desligados</h3><h2 style='color: red;'>{len(df[df['Status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
         
-        counts = df['Função'].value_counts().reset_index()
+        # Agrupamento pela coluna Abrev. (Abreviação)
+        df['Abrev_Upper'] = df['Abrev.'].str.upper()
+        counts = df['Abrev_Upper'].value_counts().reset_index()
         counts.columns = ['Função', 'Quantidade']
-        fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função", color_discrete_sequence=['#FFD700'], text_auto=True)
-        fig.update_layout(plot_bgcolor='white')
+        fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Agrupado por Abreviação)", color_discrete_sequence=['#FFD700'], text_auto=True)
+        fig.update_layout(
+            plot_bgcolor='white',
+            xaxis=dict(
+                tickangle=-45,
+                automargin=True,
+                tickfont=dict(size=12)
+            ),
+            margin=dict(l=50, r=50, b=120, t=50)
+        )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Nenhum colaborador cadastrado ainda.")
@@ -254,16 +264,31 @@ with aba_view[1 + idx_offset]:
         st.markdown("---")
         st.markdown("### 🔍 Detalhamento Interativo")
         
-        # Gráfico de Funções (Interativo)
-        df_f = df_filtrado.groupby('Função')['Horas_Dec'].sum().reset_index()
-        fig_func = px.bar(df_f, x='Função', y='Horas_Dec', title="Horas por Função (Clique para filtrar equipamentos)", 
+        # Para o gráfico de produtividade, precisamos buscar a Abreviação de cada colaborador
+        dados_func = db.get_funcionarios()
+        dict_abrev = {f[0]: f[3].upper() if f[3] else f[2].upper() for f in dados_func}
+        
+        df_filtrado['Abrev'] = df_filtrado['Matrícula'].map(dict_abrev)
+        
+        # Gráfico de Funções (Interativo e Agrupado por Abreviação)
+        df_f = df_filtrado.groupby('Abrev')['Horas_Dec'].sum().reset_index()
+        df_f.columns = ['Função', 'Horas_Dec']
+        fig_func = px.bar(df_f, x='Função', y='Horas_Dec', title="Horas por Função (Agrupado por Abreviação - Clique para filtrar)", 
                          color_discrete_sequence=['#FFD700'], text_auto='.1f')
-        fig_func.update_layout(clickmode='event+select')
+        fig_func.update_layout(
+            clickmode='event+select',
+            xaxis=dict(
+                tickangle=-45,
+                automargin=True,
+                tickfont=dict(size=12)
+            ),
+            margin=dict(l=50, r=50, b=120, t=50)
+        )
         
         # Captura o clique no gráfico de funções
         selected_points = st.plotly_chart(fig_func, use_container_width=True, on_select="rerun")
         
-        # Lógica de filtragem baseada na seleção
+        # Lógica de filtragem baseada na seleção (usa a Abreviação)
         filtro_func = None
         if selected_points and "selection" in selected_points and "points" in selected_points["selection"]:
             points = selected_points["selection"]["points"]
@@ -271,9 +296,9 @@ with aba_view[1 + idx_offset]:
                 filtro_func = points[0]["x"]
                 st.info(f"Filtrando por Função: **{filtro_func}**")
         
-        # Gráfico de Equipamentos (Filtrado ou Geral)
+        # Gráfico de Equipamentos (Filtrado pela Abreviação ou Geral)
         if filtro_func:
-            df_e_data = df_filtrado[df_filtrado['Função'] == filtro_func]
+            df_e_data = df_filtrado[df_filtrado['Abrev'] == filtro_func]
             titulo_e = f"Horas por Equipamento - Função: {filtro_func}"
         else:
             df_e_data = df_filtrado
@@ -282,6 +307,14 @@ with aba_view[1 + idx_offset]:
         df_e = df_e_data.groupby('Equipamento')['Horas_Dec'].sum().reset_index()
         fig_equip = px.bar(df_e, x='Equipamento', y='Horas_Dec', title=titulo_e, 
                           color_discrete_sequence=['#000000'], text_auto='.1f')
+        fig_equip.update_layout(
+            xaxis=dict(
+                tickangle=-45,
+                automargin=True,
+                tickfont=dict(size=12)
+            ),
+            margin=dict(l=50, r=50, b=120, t=50)
+        )
         st.plotly_chart(fig_equip, use_container_width=True)
         
         if filtro_func:
