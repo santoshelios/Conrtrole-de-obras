@@ -1,0 +1,440 @@
+import streamlit as st
+import pandas as pd
+import time
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+from io import BytesIO
+
+# Tenta importar o módulo db_rh
+try:
+    import db_rh as db
+except Exception as e:
+    st.error(f"Erro ao carregar o módulo 'db_rh.py'. Erro: {e}")
+
+# Configuração da Página
+st.set_page_config(
+    page_title="GRUPO SANTIN - Controle de Obras",
+    page_icon="🏗️",
+    layout="wide"
+)
+
+# --- ESTILIZAÇÃO CUSTOMIZADA (Grupo Santin) ---
+st.markdown("""
+    <style>
+    .main { background-color: #FFFFFF; }
+    .stButton>button { 
+        border-radius: 5px; 
+        height: 3em; 
+        width: 100%; 
+        background-color: #FFD700;
+        color: #000000;
+        font-weight: bold;
+        border: 2px solid #000000;
+    }
+    .stButton>button:hover {
+        background-color: #FFC700;
+    }
+    .metric-card {
+        background-color: #F5F5F5;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        text-align: center;
+        border-top: 5px solid #FFD700;
+        border-left: 5px solid #000000;
+        margin-bottom: 20px;
+    }
+    .header-style {
+        color: #000000;
+        font-family: 'Arial', sans-serif;
+        border-bottom: 3px solid #FFD700;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+        font-weight: bold;
+    }
+    .clock-style {
+        text-align: right;
+        font-size: 14px;
+        color: #666;
+        margin-bottom: -40px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- INICIALIZAÇÃO DE ESTADO ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'form_key' not in st.session_state:
+    st.session_state.form_key = 0
+if 'filtro_funcao' not in st.session_state:
+    st.session_state.filtro_funcao = None
+
+# --- FUNÇÕES DE AUXÍLIO ---
+def reset_form():
+    st.session_state.form_key += 1
+
+def calcular_horas(e, s_a, r_a, s_f):
+    try:
+        fmt = '%H:%M:%S'
+        t1 = datetime.strptime(str(e), fmt)
+        t2 = datetime.strptime(str(s_a), fmt)
+        t3 = datetime.strptime(str(r_a), fmt)
+        t4 = datetime.strptime(str(s_f), fmt)
+        p1 = t2 - t1
+        p2 = t4 - t3
+        total = p1 + p2
+        total_segundos = total.total_seconds()
+        horas = int(total_segundos // 3600)
+        minutos = int((total_segundos % 3600) // 60)
+        return f"{horas:02d}:{minutos:02d}"
+    except:
+        return "00:00"
+
+def horas_para_decimal(h_m):
+    try:
+        h, m = map(int, h_m.split(':'))
+        return h + m / 60.0
+    except:
+        return 0.0
+
+# --- RELÓGIO DISCRETO ---
+now = datetime.now()
+st.markdown(f"<div class='clock-style'>{now.strftime('%d/%m/%Y - %H:%M')}</div>", unsafe_allow_html=True)
+
+# --- BARRA LATERAL (LOGIN) ---
+with st.sidebar:
+    st.markdown("<h2 class='header-style'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
+    
+    if not st.session_state.logged_in:
+        with st.container():
+            user = st.text_input("Usuário")
+            password = st.text_input("Senha", type="password")
+            if st.button("Entrar"):
+                if hasattr(db, 'check_login'):
+                    if db.check_login(user, password):
+                        st.session_state.logged_in = True
+                        st.success("Acesso Autorizado!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Credenciais inválidas")
+    else:
+        st.write(f"Conectado como: **Gestor de Projeto**")
+        if st.button("Sair"):
+            st.session_state.logged_in = False
+            st.rerun()
+
+    st.markdown("---")
+    st.info("Apenas gestores podem registrar apontamentos e gerenciar o efetivo.")
+
+# --- CORPO PRINCIPAL ---
+st.markdown("<h1 class='header-style'>🏗️ GRUPO SANTIN - Controle de Obras</h1>", unsafe_allow_html=True)
+
+# Definição das Abas
+if st.session_state.logged_in:
+    tabs_list = ["➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro"]
+else:
+    tabs_list = ["📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas"]
+
+aba_view = st.tabs(tabs_list)
+
+# --- LÓGICA DE EXIBIÇÃO ---
+if st.session_state.logged_in:
+    # 0: NOVO COLABORADOR
+    with aba_view[0]:
+        st.subheader("➕ Cadastro de Novo Colaborador")
+        funcoes_disponiveis = db.get_funcoes()
+        with st.form(key=f"form_novo_colab_{st.session_state.form_key}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                mat = st.text_input("Matrícula *")
+                nome = st.text_input("Nome Completo *")
+                func = st.selectbox("Função/Cargo *", funcoes_disponiveis)
+            with c2:
+                abrev = st.text_input("Abreviação")
+                adm = st.date_input("Data de Admissão")
+                mo = st.selectbox("Tipo de MO", ["MOD", "MOI"])
+                status = st.selectbox("Status", ["Ativo", "Inativo"])
+            if st.form_submit_button("Cadastrar Colaborador"):
+                if mat.isdigit() and nome:
+                    success, msg = db.add_funcionario(mat, nome, func, abrev, adm, mo, status)
+                    if success:
+                        st.success("Cadastrado!"); reset_form(); time.sleep(1); st.rerun()
+                    else: st.error(f"Erro: {msg}")
+                else: st.error("Verifique os campos obrigatórios (Matrícula deve ser numérica).")
+
+    # 1: APONTAR HORAS
+    with aba_view[1]:
+        st.subheader("✍️ Novo Apontamento Diário")
+        dados_func = db.get_funcionarios()
+        mats = [d[0] for d in dados_func]
+        equipamentos_disp = db.get_equipamentos()
+        
+        with st.form(key=f"form_apont_horas_{st.session_state.form_key}"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                sel_mat = st.selectbox("Matrícula Colaborador *", [""] + mats)
+                func_info = next((f for f in dados_func if f[0] == sel_mat), None)
+                nome_auto = func_info[1] if func_info else ""
+                funcao_auto = func_info[2] if func_info else ""
+                st.text_input("Nome", value=nome_auto, disabled=True)
+                st.text_input("Função", value=funcao_auto, disabled=True)
+                data_ap = st.date_input("Data do Apontamento", value=datetime.now().date())
+            
+            with c2:
+                equip = st.selectbox("Equipamento Utilizado *", [""] + equipamentos_disp)
+                ativ = st.text_area("Descrição da Atividade")
+            
+            with c3:
+                ent = st.time_input("Início Jornada", value=datetime.strptime("07:00", "%H:%M").time())
+                s_alm = st.time_input("Saída Intervalo", value=datetime.strptime("12:00", "%H:%M").time())
+                r_alm = st.time_input("Retorno Intervalo", value=datetime.strptime("13:00", "%H:%M").time())
+                s_fin = st.time_input("Fim Jornada", value=datetime.strptime("17:00", "%H:%M").time())
+                total_h = calcular_horas(ent, s_alm, r_alm, s_fin)
+                st.info(f"Horas Trabalhadas: **{total_h}**")
+
+            if st.form_submit_button("Registrar em Obra"):
+                if sel_mat and equip and ativ:
+                    db.add_apontamento(sel_mat, nome_auto, funcao_auto, equip, ativ, ent, s_alm, r_alm, s_fin, total_h, data_ap)
+                    st.success("Registrado com sucesso!")
+                    reset_form(); time.sleep(1); st.rerun()
+                else: st.warning("Preencha os campos obrigatórios.")
+    
+    idx_offset = 2
+else:
+    idx_offset = 0
+
+# DASHBOARD EFETIVO
+with aba_view[0 + idx_offset]:
+    dados = db.get_funcionarios()
+    if dados:
+        df = pd.DataFrame(dados, columns=["Matrícula", "Nome", "Função", "Abrev.", "Admissão", "MO", "Status"])
+        m1, m2, m3 = st.columns(3)
+        with m1: st.markdown(f"<div class='metric-card'><h3>Total Efetivo</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+        with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['Status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
+        with m3: st.markdown(f"<div class='metric-card'><h3>Inativos/Desligados</h3><h2 style='color: red;'>{len(df[df['Status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
+        
+        counts = df['Função'].value_counts().reset_index()
+        counts.columns = ['Função', 'Quantidade']
+        fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função", color_discrete_sequence=['#FFD700'], text_auto=True)
+        fig.update_layout(plot_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Nenhum colaborador cadastrado ainda.")
+
+# DASHBOARD PRODUTIVIDADE
+with aba_view[1 + idx_offset]:
+    st.subheader("📈 Análise de Produtividade (Horas)")
+    aponts = db.get_apontamentos()
+    if aponts:
+        df_ap = pd.DataFrame(aponts, columns=["Matrícula", "Nome", "Função", "Equipamento", "Atividade", "Entrada", "S. Almoço", "R. Almoço", "Saída", "Total", "Data"])
+        df_ap['Data'] = pd.to_datetime(df_ap['Data'])
+        df_ap['Horas_Dec'] = df_ap['Total'].apply(horas_para_decimal)
+        df_ap['Mes_Ano'] = df_ap['Data'].dt.strftime('%m/%Y')
+        
+        meses_disp = sorted(df_ap['Mes_Ano'].unique(), reverse=True)
+        mes_sel = st.selectbox("Filtrar Mês de Referência", meses_disp)
+        
+        df_filtrado = df_ap[df_ap['Mes_Ano'] == mes_sel].sort_values('Data')
+        
+        # Gráfico de Linha (Horas por Dia)
+        df_dia = df_filtrado.groupby('Data')['Horas_Dec'].sum().reset_index()
+        fig_dia = go.Figure()
+        fig_dia.add_trace(go.Scatter(
+            x=df_dia['Data'], y=df_dia['Horas_Dec'], mode='lines+markers+text',
+            line_shape='spline', text=[f"{h:.1f}h" for h in df_dia['Horas_Dec']],
+            textposition="top center", marker=dict(size=10, color='#000000'),
+            line=dict(width=3, color='#FFD700'), name="Horas"
+        ))
+        fig_dia.update_layout(title=f"Horas por Dia - {mes_sel}", xaxis=dict(tickformat="%d"), template="plotly_white")
+        st.plotly_chart(fig_dia, use_container_width=True)
+        
+        # Interatividade: Filtro por Função
+        st.markdown("---")
+        st.markdown("### 🔍 Detalhamento Interativo")
+        
+        # Gráfico de Funções (Interativo)
+        df_f = df_filtrado.groupby('Função')['Horas_Dec'].sum().reset_index()
+        fig_func = px.bar(df_f, x='Função', y='Horas_Dec', title="Horas por Função (Clique para filtrar equipamentos)", 
+                         color_discrete_sequence=['#FFD700'], text_auto='.1f')
+        fig_func.update_layout(clickmode='event+select')
+        
+        # Captura o clique no gráfico de funções
+        selected_points = st.plotly_chart(fig_func, use_container_width=True, on_select="rerun")
+        
+        # Lógica de filtragem baseada na seleção
+        filtro_func = None
+        if selected_points and "selection" in selected_points and "points" in selected_points["selection"]:
+            points = selected_points["selection"]["points"]
+            if points:
+                filtro_func = points[0]["x"]
+                st.info(f"Filtrando por Função: **{filtro_func}**")
+        
+        # Gráfico de Equipamentos (Filtrado ou Geral)
+        if filtro_func:
+            df_e_data = df_filtrado[df_filtrado['Função'] == filtro_func]
+            titulo_e = f"Horas por Equipamento - Função: {filtro_func}"
+        else:
+            df_e_data = df_filtrado
+            titulo_e = "Horas por Equipamento (Geral)"
+            
+        df_e = df_e_data.groupby('Equipamento')['Horas_Dec'].sum().reset_index()
+        fig_equip = px.bar(df_e, x='Equipamento', y='Horas_Dec', title=titulo_e, 
+                          color_discrete_sequence=['#000000'], text_auto='.1f')
+        st.plotly_chart(fig_equip, use_container_width=True)
+        
+        if filtro_func:
+            if st.button("Limpar Filtro"):
+                st.rerun()
+                
+    else:
+        st.info("Sem dados de produtividade registrados.")
+
+# CONSULTA GERAL
+with aba_view[2 + idx_offset]:
+    st.subheader("📖 Consulta de Efetivo")
+    dados = db.get_funcionarios()
+    if dados:
+        df = pd.DataFrame(dados, columns=["Matrícula", "Nome", "Função", "Abrev.", "Admissão", "MO", "Status"])
+        df_up = df.applymap(lambda x: str(x).upper() if pd.notnull(x) else x)
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_up.to_excel(writer, index=False)
+        st.download_button("⬇️ Exportar Excel", data=buffer.getvalue(), file_name="Efetivo_Santin.xlsx")
+        st.dataframe(df_up, use_container_width=True)
+
+# REGISTROS DE HORAS
+with aba_view[3 + idx_offset]:
+    st.subheader("⏱️ Histórico de Apontamentos")
+    # Usar a nova função que traz o ID para permitir exclusão precisa
+    aponts_raw = db.get_apontamentos_com_id() if hasattr(db, 'get_apontamentos_com_id') else []
+    
+    if aponts_raw:
+        df_ap_full = pd.DataFrame(aponts_raw, columns=["ID", "Matrícula", "Nome", "Função", "Equipamento", "Atividade", "Entrada", "S. Almoço", "R. Almoço", "Saída", "Total", "Data"])
+        
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            d_f = st.date_input("Filtrar Data", value=None, key="filtro_data_hist")
+        
+        df_display = df_ap_full.copy()
+        if d_f:
+            df_display = df_display[df_display['Data'] == str(d_f)]
+        
+        # Mostrar os últimos 20 registros
+        df_ap_up = df_display.tail(20).applymap(lambda x: str(x).upper() if pd.notnull(x) else x)
+        st.dataframe(df_ap_up, use_container_width=True)
+        
+        # Opção de Exclusão (Apenas Admin)
+        if st.session_state.logged_in:
+            st.markdown("---")
+            st.markdown("### 🗑️ Gerenciar Registros (Admin)")
+            
+            with st.expander("Excluir Apontamentos"):
+                # Criar uma lista formatada para o selectbox
+                opcoes_excluir = []
+                for _, row in df_display.iterrows():
+                    opcoes_excluir.append(f"ID: {row['ID']} | {row['Data']} | {row['Nome']} | {row['Total']}h")
+                
+                sel_excluir = st.multiselect("Selecione os registros para excluir", opcoes_excluir)
+                
+                if st.button("Excluir Selecionados", type="secondary"):
+                    if sel_excluir:
+                        ids_para_excluir = [int(s.split('|')[0].replace('ID: ', '').strip()) for s in sel_excluir]
+                        sucesso_count = 0
+                        for id_del in ids_para_excluir:
+                            if db.delete_apontamento_por_id(id_del):
+                                sucesso_count += 1
+                        
+                        if sucesso_count > 0:
+                            st.success(f"{sucesso_count} registro(s) excluído(s) com sucesso!")
+                            time.sleep(1)
+                            st.rerun()
+                    else:
+                        st.warning("Selecione ao menos um registro.")
+    else:
+        st.info("Nenhum apontamento registrado.")
+
+# ABAS EXCLUSIVAS ADMIN (Continuação)
+if st.session_state.logged_in:
+    with aba_view[6]: # GESTÃO FUNÇÕES
+        st.subheader("⚙️ Gestão de Funções")
+        c1, c2 = st.columns([2, 1])
+        
+        funcoes = db.get_funcoes()
+        with c1:
+            df_funcoes = pd.DataFrame([f.upper() for f in funcoes], columns=["Função"])
+            st.table(df_funcoes)
+            
+        with c2:
+            st.markdown("#### Adicionar")
+            n_f = st.text_input("Nova Função", key="n_f_input")
+            if st.button("Salvar Função"):
+                if db.add_funcao(n_f): st.success("Salvo!"); st.rerun()
+            
+            st.markdown("---")
+            st.markdown("#### Remover")
+            f_del = st.selectbox("Selecionar Função para Remover", [""] + funcoes)
+            if st.button("Excluir Função"):
+                if f_del and f_del != "":
+                    if db.delete_funcao(f_del):
+                        st.success("Removido!")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    st.warning("Selecione uma função.")
+
+    with aba_view[7]: # GESTÃO EQUIPAMENTOS
+        st.subheader("🚜 Gestão de Equipamentos")
+        c1, c2 = st.columns([2, 1])
+        
+        equips = db.get_equipamentos()
+        with c1:
+            df_equips = pd.DataFrame([e.upper() for e in equips], columns=["Equipamento"])
+            st.table(df_equips)
+            
+        with c2:
+            st.markdown("#### Adicionar")
+            n_e = st.text_input("Novo Equipamento", key="n_e_input")
+            if st.button("Salvar Equipamento"):
+                if db.add_equipamento(n_e): st.success("Salvo!"); st.rerun()
+            
+            st.markdown("---")
+            st.markdown("#### Remover")
+            e_del = st.selectbox("Selecionar Equipamento para Remover", [""] + equips)
+            if st.button("Excluir Equipamento"):
+                if e_del and e_del != "":
+                    if db.delete_equipamento(e_del):
+                        st.success("Removido!")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    st.warning("Selecione um equipamento.")
+
+    with aba_view[8]: # ATUALIZAR
+        st.subheader("✏️ Atualizar Cadastro")
+        dados = db.get_funcionarios()
+        mats = [d[0] for d in dados]
+        if mats:
+            s_m = st.selectbox("Matrícula", mats, key="upd_sel")
+            f_d = next((f for f in dados if f[0] == s_m), None)
+            if f_d:
+                with st.form(key=f"form_update_colab_{st.session_state.form_key}"):
+                    u_n = st.text_input("Nome", value=f_d[1])
+                    u_f = st.selectbox("Função", db.get_funcoes(), index=db.get_funcoes().index(f_d[2]) if f_d[2] in db.get_funcoes() else 0)
+                    u_a = st.text_input("Abreviação", value=f_d[3])
+                    u_d = st.date_input("Admissão", value=datetime.strptime(f_d[4], '%Y-%m-%d').date() if f_d[4] else datetime.now().date())
+                    u_mo = st.selectbox("MO", ["MOD", "MOI"], index=0 if f_d[5] == "MOD" else 1)
+                    u_st = st.selectbox("Status", ["Ativo", "Inativo"], index=0 if f_d[6] == "Ativo" else 1)
+                    
+                    if st.form_submit_button("Salvar Alterações"):
+                        if db.update_funcionario(s_m, u_n, u_f, u_a, u_d, u_mo, u_st):
+                            st.success("Atualizado!"); reset_form(); time.sleep(1); st.rerun()
+
+    with aba_view[9]: # REMOVER
+        st.subheader("🗑️ Remover Registro de Colaborador")
+        mats = [d[0] for d in db.get_funcionarios()]
+        if mats:
+            d_m = st.selectbox("Excluir Matrícula", mats, key="del_sel")
+            if st.button("Confirmar Exclusão de Colaborador"):
+                if db.delete_funcionario(d_m): st.success("Removido!"); time.sleep(1); st.rerun()
