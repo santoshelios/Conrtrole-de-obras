@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from io import BytesIO
+import pytz
 
 # Tenta importar o módulo db_rh
 try:
@@ -19,54 +20,139 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- ESTILIZAÇÃO CUSTOMIZADA (Grupo Santin) ---
+# --- ESTILIZAÇÃO CUSTOMIZADA (Padrão Corporativo) ---
 st.markdown("""
     <style>
     .main { background-color: #FFFFFF; }
+    
+    /* Botões Grandes e Centralizados */
     .stButton>button { 
-        border-radius: 5px; 
-        height: 3em; 
+        border-radius: 8px; 
+        height: 3.5em; 
         width: 100%; 
         background-color: #FFD700;
         color: #000000;
         font-weight: bold;
         border: 2px solid #000000;
+        font-size: 16px;
+        transition: 0.3s;
     }
     .stButton>button:hover {
-        background-color: #FFC700;
+        background-color: #000000;
+        color: #FFD700;
+        border: 2px solid #FFD700;
     }
+    
+    /* Cards de Métricas */
     .metric-card {
-        background-color: #F5F5F5;
+        background-color: #F8F9FA;
         padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         text-align: center;
-        border-top: 5px solid #FFD700;
-        border-left: 5px solid #000000;
+        border-top: 6px solid #FFD700;
+        border-left: 1px solid #DEE2E6;
         margin-bottom: 20px;
     }
+    
+    /* Cabeçalhos */
     .header-style {
         color: #000000;
-        font-family: 'Arial', sans-serif;
-        border-bottom: 3px solid #FFD700;
-        padding-bottom: 10px;
-        margin-bottom: 20px;
-        font-weight: bold;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        border-bottom: 4px solid #FFD700;
+        padding-bottom: 12px;
+        margin-bottom: 25px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
+    
+    /* Relógio */
     .clock-style {
         text-align: right;
+        font-size: 15px;
+        color: #333;
+        font-weight: 600;
+        margin-bottom: -45px;
+        padding-right: 10px;
+    }
+    
+    /* Footer */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #f1f1f1;
+        color: #333;
+        text-align: center;
+        padding: 10px;
         font-size: 14px;
-        color: #666;
-        margin-bottom: -40px;
+        border-top: 2px solid #FFD700;
+        z-index: 999;
+    }
+    .footer a {
+        margin: 0 15px;
+        text-decoration: none;
+        color: #000;
+        font-weight: bold;
+    }
+    
+    /* Splash Screen Animado */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    
+    #splash-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        color: #FFD700;
+        flex-direction: column;
+        animation: fadeIn 1s ease-in;
+    }
+    .splash-logo {
+        font-size: 60px;
+        font-weight: 900;
+        animation: pulse 2s infinite;
+        text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
     }
     </style>
     """, unsafe_allow_html=True)
+
+# --- CORREÇÃO DE HORÁRIO (Brasília) ---
+def get_now_br():
+    tz_br = pytz.timezone('America/Sao_Paulo')
+    return datetime.now(tz_br)
 
 # --- INICIALIZAÇÃO DE ESTADO ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'form_key' not in st.session_state:
     st.session_state.form_key = 0
+if 'splash_done' not in st.session_state:
+    st.session_state.splash_done = False
+
+# --- TELA DE ABERTURA (SPLASH) ---
+if not st.session_state.splash_done:
+    splash = st.empty()
+    with splash.container():
+        st.markdown("""
+            <div id="splash-screen">
+                <div class="splash-logo">🏗️ GRUPO SANTIN</div>
+                <p style='font-size: 22px; letter-spacing: 8px; margin-top: 10px;'>CONTROLE DE OBRAS & BI</p>
+                <div style='margin-top: 30px; font-family: monospace; opacity: 0.8;'>Iniciando ambiente seguro...</div>
+            </div>
+        """, unsafe_allow_html=True)
+        time.sleep(3.0)
+    splash.empty()
+    st.session_state.splash_done = True
 
 # --- FUNÇÕES DE AUXÍLIO ---
 def reset_form():
@@ -96,9 +182,11 @@ def horas_para_decimal(h_m):
     except:
         return 0.0
 
-# --- RELÓGIO DISCRETO ---
-now = datetime.now()
-st.markdown(f"<div class='clock-style'>{now.strftime('%d/%m/%Y - %H:%M')}</div>", unsafe_allow_html=True)
+# --- RELÓGIO COM FUSO BRASÍLIA ---
+now_br = get_now_br()
+st.markdown(f"<div class='clock-style'>🕒 {now_br.strftime('%d/%m/%Y - %H:%M')} (Brasília)</div>", unsafe_allow_html=True)
+
+
 
 # --- BARRA LATERAL (LOGIN COM SECRETS) ---
 with st.sidebar:
@@ -246,6 +334,7 @@ with aba_view[0]:
                 st.info("Clique em uma barra do gráfico ao lado para ver os nomes.")
     else:
         st.info("Nenhum dado de efetivo diário carregado.")
+        
 
 if st.session_state.logged_in:
     # 1: NOVO COLABORADOR
