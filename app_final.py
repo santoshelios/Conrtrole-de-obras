@@ -123,6 +123,31 @@ st.markdown("""
         animation: pulse 2s infinite;
         text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
     }
+    
+    /* Botão de Download Excel Estilizado */
+    .download-excel-btn {
+        display: inline-block;
+        padding: 10px 20px;
+        background: linear-gradient(135deg, #1e7e34 0%, #28a745 100%);
+        color: white;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 14px;
+        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        transition: all 0.3s ease;
+        border: 2px solid #1e7e34;
+        text-align: center;
+        cursor: pointer;
+    }
+    .download-excel-btn:hover {
+        background: linear-gradient(135deg, #155724 0%, #1e7e34 100%);
+        box-shadow: 0 6px 16px rgba(40, 167, 69, 0.5);
+        transform: translateY(-2px);
+    }
+    .download-excel-btn:active {
+        transform: translateY(0px);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -181,6 +206,14 @@ def horas_para_decimal(h_m):
         return h + m / 60.0
     except:
         return 0.0
+
+def converter_df_para_excel(df):
+    """Converte um DataFrame para formato Excel em memória"""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Consulta_Efetivo')
+    output.seek(0)
+    return output
 
 # --- RELÓGIO COM FUSO BRASÍLIA ---
 now_br = get_now_br()
@@ -283,20 +316,18 @@ with aba_view[0]:
             df_hist_count = df_hist.groupby('Data').size().reset_index(name='Quantidade')
             fig_hist = px.line(df_hist_count, x='Data', y='Quantidade', markers=True, title="Evolução do Efetivo Presente (Status 1)", text='Quantidade')
             fig_hist.update_traces(textposition="top center", textfont=dict(color="black", size=12))
-            fig_hist.update_xaxes(type='date', tickformat='%d/%m/%Y', dtick="D1", tickangle=-45)
-            fig_hist.update_layout(margin=dict(b=100), template="plotly_white")
+            fig_hist.update_layout(template="plotly_white", xaxis=dict(tickformat="%d/%m/%Y"))
             st.plotly_chart(fig_hist, width='stretch')
-        else:
-            st.warning("Nenhum dado de efetivo presente (Status 1) para o período selecionado.")
         
         st.markdown("---")
-        st.markdown("### 📊 Status do Efetivo (Visão Geral)")
+        st.markdown("### 📋 Situação Mais Recente")
+        
         data_recente = df_ef['Data'].max()
         df_recente = df_ef[df_ef['Data'] == data_recente]
         
         if sit_filtro != "TODAS":
             df_recente = df_recente[df_recente['Situacao'] == sit_filtro]
-            
+        
         if not df_recente.empty:
             df_status_dia = df_recente.groupby('Situacao').size().reset_index(name='Total')
             col_graf, col_tab = st.columns([1, 1])
@@ -495,7 +526,7 @@ if st.session_state.logged_in:
                 if filtro_func and st.button("Limpar Filtro"): st.rerun()
 else:
     with aba_view[4]:
-        st.subheader("⏱️ Registros de Horas Detalhados")
+        st.subheader("⏱️ Registros de Horas")
         aponts_raw = db.get_apontamentos_com_id()
         if aponts_raw:
             df_ap_full = pd.DataFrame(aponts_raw, columns=["ID", "Matrícula", "Nome", "Função", "Equipamento", "Atividade", "Entrada", "S. Almoço", "R. Almoço", "Saída", "Total", "Data"])
@@ -507,9 +538,31 @@ if st.session_state.logged_in:
     # CONSULTA GERAL
     with aba_view[5]:
         st.subheader("📖 Consulta de Efetivo")
+        
+        # Botão de Download Excel no topo (discreto e estilizado)
         dados = db.get_funcionarios()
         if dados:
             df = pd.DataFrame(dados, columns=["Matrícula", "Nome", "Função", "Abrev.", "Admissão", "MO", "Status"])
+            
+            # Preparar arquivo Excel
+            excel_data = converter_df_para_excel(df)
+            
+            # Botão de download estilizado
+            st.markdown("""
+                <div style='text-align: right; margin-bottom: 15px;'>
+            """, unsafe_allow_html=True)
+            
+            st.download_button(
+                label="📥 Exportar para Excel",
+                data=excel_data,
+                file_name=f"consulta_efetivo_{now_br.strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Baixar dados em formato Excel"
+            )
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+            # Exibir tabela
             st.dataframe(df.map(lambda x: str(x).upper() if pd.notnull(x) else x), width='stretch')
 
     # REGISTROS DE HORAS
