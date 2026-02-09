@@ -262,7 +262,8 @@ with aba_view[0]:
 
     dados_efetivo = db.get_efetivo_diario()
     if dados_efetivo and len(dados_efetivo) > 0:
-        df_ef = pd.DataFrame(dados_efetivo, columns=["Data", "Matrícula", "Nome", "Função", "Status", "Situação"])
+        # Colunas do Supabase: data, matricula, nome, funcao, status_val, situacao
+        df_ef = pd.DataFrame(dados_efetivo, columns=["Data", "Matricula", "Nome", "Funcao", "Status_Val", "Situacao"])
         df_ef['Data'] = pd.to_datetime(df_ef['Data']).dt.date
         
         st.markdown("### 🔍 Filtros de Visualização")
@@ -273,52 +274,60 @@ with aba_view[0]:
         with f1: d_ini = st.date_input("Data Início", value=primeiro_dia_mes)
         with f2: d_fim = st.date_input("Data Fim", value=hoje)
         with f3: 
-            situacoes_disp = ["TODAS"] + sorted(df_ef['Situação'].unique().tolist())
+            situacoes_disp = ["TODAS"] + sorted(df_ef['Situacao'].unique().tolist())
             sit_filtro = st.selectbox("Filtrar Situação", situacoes_disp)
         
-        # Gráfico de Histórico
-        df_hist = df_ef[(df_ef['Data'] >= d_ini) & (df_ef['Data'] <= d_fim) & (df_ef['Status'].astype(str).isin(['1', '1.0', 'Ativo']))]
+        # Gráfico de Histórico (Status_Val == 1)
+        df_hist = df_ef[(df_ef['Data'] >= d_ini) & (df_ef['Data'] <= d_fim) & (df_ef['Status_Val'] == 1)]
         if not df_hist.empty:
             df_hist_count = df_hist.groupby('Data').size().reset_index(name='Quantidade')
-            fig_hist = px.line(df_hist_count, x='Data', y='Quantidade', markers=True, title="Evolução do Efetivo Presente (Status Ativo/1)", text='Quantidade')
+            fig_hist = px.line(df_hist_count, x='Data', y='Quantidade', markers=True, title="Evolução do Efetivo Presente (Status 1)", text='Quantidade')
             fig_hist.update_traces(textposition="top center", textfont=dict(color="black", size=12))
             fig_hist.update_xaxes(type='date', tickformat='%d/%m/%Y', dtick="D1", tickangle=-45)
             fig_hist.update_layout(margin=dict(b=100), template="plotly_white")
             st.plotly_chart(fig_hist, width='stretch')
         else:
-            st.warning("Nenhum dado de efetivo presente (Status Ativo/1) para o período.")
+            st.warning("Nenhum dado de efetivo presente (Status 1) para o período selecionado.")
         
         st.markdown("---")
         st.markdown("### 📊 Status do Efetivo (Visão Geral)")
         data_recente = df_ef['Data'].max()
         df_recente = df_ef[df_ef['Data'] == data_recente]
+        
         if sit_filtro != "TODAS":
-            df_recente = df_recente[df_recente['Situação'] == sit_filtro]
+            df_recente = df_recente[df_recente['Situacao'] == sit_filtro]
             
         if not df_recente.empty:
-            df_status_dia = df_recente.groupby('Situação').size().reset_index(name='Total')
+            df_status_dia = df_recente.groupby('Situacao').size().reset_index(name='Total')
             col_graf, col_tab = st.columns([1, 1])
             with col_graf:
-                fig_status = px.bar(df_status_dia, y='Situação', x='Total', orientation='h', title=f"Distribuição de Situações - {data_recente.strftime('%d/%m/%Y')}", color_discrete_sequence=['#000000'], text_auto=True)
+                fig_status = px.bar(df_status_dia, y='Situacao', x='Total', orientation='h', 
+                                   title=f"Distribuição de Situações - {data_recente.strftime('%d/%m/%Y')}", 
+                                   color_discrete_sequence=['#000000'], text_auto=True)
                 fig_status.update_layout(yaxis={'categoryorder':'total ascending'}, template="plotly_white")
                 sel_status = st.plotly_chart(fig_status, width='stretch', on_select="rerun")
             with col_tab:
                 if sel_status and "selection" in sel_status and "points" in sel_status["selection"] and sel_status["selection"]["points"]:
                     sit_filtrada = sel_status["selection"]["points"][0]["y"]
                     st.markdown(f"#### Detalhes: {sit_filtrada}")
-                    df_detalhe = df_recente[df_recente['Situação'] == sit_filtrada]
+                    df_detalhe = df_recente[df_recente['Situacao'] == sit_filtrada]
+                    
+                    # Busca abreviações do cadastro de funcionários
                     dados_func = db.get_funcionarios()
-                    dict_abrev = {f[0]: f[3].upper() if f[3] else f[2].upper() for f in dados_func}
-                    df_detalhe['Abrev'] = df_detalhe['Matrícula'].map(dict_abrev).fillna(df_detalhe['Função'])
+                    dict_abrev = {str(f[0]): (f[3].upper() if f[3] else f[2].upper()) for f in dados_func}
+                    
+                    df_detalhe['Abrev'] = df_detalhe['Matricula'].astype(str).map(dict_abrev).fillna(df_detalhe['Funcao'])
+                    
                     for a in sorted(df_detalhe['Abrev'].unique()):
                         with st.expander(f"🔸 {a}"):
-                            for n in df_detalhe[df_detalhe['Abrev'] == a]['Nome'].tolist(): st.write(f"- {n}")
+                            for n in df_detalhe[df_detalhe['Abrev'] == a]['Nome'].tolist():
+                                st.write(f"- {n}")
                 else:
                     st.info("Clique em uma barra do gráfico ao lado para ver os nomes.")
         else:
-            st.warning("Nenhum dado para a data/situação selecionada.")
+            st.warning(f"Nenhum dado encontrado para a data {data_recente.strftime('%d/%m/%Y')} com o filtro selecionado.")
     else:
-        st.info("Nenhum dado de efetivo diário carregado.")
+        st.info("Nenhum dado de efetivo diário carregado no banco de dados.")
 
 # --- ABA 1: DASH EFETIVO (PÚBLICO) / NOVO COLABORADOR (LOGADO) ---
 if st.session_state.logged_in:

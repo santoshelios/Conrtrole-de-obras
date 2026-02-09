@@ -2,39 +2,42 @@ import psycopg2
 from psycopg2 import extras
 import streamlit as st
 from datetime import datetime, date
+import pandas as pd
 
 # --- CONFIGURAÇÃO DE CONEXÃO (SUPABASE) ---
 def get_connection():
-    """Conexão ultra-resiliente com múltiplos fallbacks."""
-    # 1. Tenta segredos do Streamlit
+    """Conexão robusta com o Supabase usando a URL de conexão do pooler correta."""
+    # 1. Tenta segredos do Streamlit (Prioridade para Deploy)
     try:
         if "database" in st.secrets:
             return psycopg2.connect(st.secrets["database"]["url"])
     except:
         pass
         
-    # 2. Tenta Pooler (Porta 6543) - Mais estável para Web
+    # 2. Configurações do Projeto (Atualizadas para a região correta: us-east-2)
+    project_id = "pzqutgzekgffqlwkmsst"
+    password = "Hss90352806amora"
+    # O host correto conforme identificado pelo usuário
+    host_pooler = "aws-1-us-east-2.pooler.supabase.com"
+    
+    # Tentativa via Pooler (Porta 6543)
+    # O formato do usuário DEVE ser: postgres.[ID_DO_PROJETO]
     try:
-        url_pooler = "postgresql://postgres.pzqutgzekgffqlwkmsst:Hss90352806amora@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?sslmode=require"
-        return psycopg2.connect(url_pooler)
-    except:
-        # 3. Tenta Conexão Direta (Porta 5432)
-        try:
-            url_direct = "postgresql://postgres:Hss90352806amora@db.pzqutgzekgffqlwkmsst.supabase.co:5432/postgres"
-            return psycopg2.connect(url_direct)
-        except Exception as e:
-            st.error(f"Erro de conexão com o banco de dados: {e}")
-            return None
+        url_pooler = f"postgresql://postgres.{project_id}:{password}@{host_pooler}:6543/postgres"
+        return psycopg2.connect(url_pooler, connect_timeout=10)
+    except Exception as e:
+        st.error(f"Erro de conexão com o banco de dados (Supabase): {e}")
+        return None
 
 def init_db():
-    """Garante que as tabelas existam e o RLS esteja desativado (UNRESTRICTED)."""
+    """Garante que as tabelas existam e o RLS esteja desativado."""
     conn = get_connection()
     if not conn: return
     try:
         conn.autocommit = True
         c = conn.cursor()
         
-        # Criação das tabelas
+        # Tabelas principais
         c.execute('''CREATE TABLE IF NOT EXISTS funcionarios (
                         matricula TEXT PRIMARY KEY, nome TEXT, funcao TEXT, abrev TEXT,
                         admissao DATE, mo TEXT, status TEXT)''')
@@ -53,7 +56,7 @@ def init_db():
         
         c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT)')
         
-        # Desativa RLS para manter status UNRESTRICTED
+        # Desativa RLS para facilitar o acesso via código
         for t in ['funcionarios', 'apontamentos', 'funcoes', 'equipamentos', 'efetivo_diario', 'usuarios']:
             try: c.execute(f"ALTER TABLE {t} DISABLE ROW LEVEL SECURITY;")
             except: pass
@@ -69,7 +72,6 @@ def add_funcionario(mat, nome, func, abrev, adm, mo, status):
     if not conn: return False, "Sem conexão"
     try:
         c = conn.cursor()
-        # Converte data para string se necessário
         d_adm = adm.strftime('%Y-%m-%d') if isinstance(adm, (date, datetime)) else adm
         c.execute("INSERT INTO funcionarios (matricula, nome, funcao, abrev, admissao, mo, status) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (matricula) DO UPDATE SET nome=EXCLUDED.nome, funcao=EXCLUDED.funcao, abrev=EXCLUDED.abrev, admissao=EXCLUDED.admissao, mo=EXCLUDED.mo, status=EXCLUDED.status", 
                  (str(mat), nome, func, abrev, d_adm, mo, status))
@@ -87,7 +89,6 @@ def get_funcionarios():
         c.execute("SELECT matricula, nome, funcao, abrev, admissao, mo, status FROM funcionarios ORDER BY nome")
         data = c.fetchall()
         conn.close()
-        # Converte datas para string para evitar erro no st.date_input do app_final
         result = []
         for r in data:
             row = list(r)
