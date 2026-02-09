@@ -56,8 +56,17 @@ def init_db():
         
         c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT)')
         
+        # TABELA DE LOGS (RASTREABILIDADE)
+        c.execute('''CREATE TABLE IF NOT EXISTS logs_auditoria (
+                        id SERIAL PRIMARY KEY, 
+                        data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        usuario TEXT,
+                        acao TEXT,
+                        tabela TEXT,
+                        detalhes TEXT)''')
+        
         # Desativa RLS para facilitar o acesso via código
-        for t in ['funcionarios', 'apontamentos', 'funcoes', 'equipamentos', 'efetivo_diario', 'usuarios']:
+        for t in ['funcionarios', 'apontamentos', 'funcoes', 'equipamentos', 'efetivo_diario', 'usuarios', 'logs_auditoria']:
             try: c.execute(f"ALTER TABLE {t} DISABLE ROW LEVEL SECURITY;")
             except: pass
             
@@ -66,8 +75,34 @@ def init_db():
     except Exception as e:
         print(f"Erro init_db: {e}")
 
+# --- FUNÇÃO DE LOGGING ---
+def registrar_log(usuario, acao, tabela, detalhes):
+    """Registra uma ação no log de auditoria."""
+    conn = get_connection()
+    if not conn: return
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO logs_auditoria (usuario, acao, tabela, detalhes) VALUES (%s, %s, %s, %s)",
+                 (usuario, acao, tabela, detalhes))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao registrar log: {e}")
+
+def get_logs():
+    """Retorna os logs de auditoria."""
+    conn = get_connection()
+    if not conn: return []
+    try:
+        c = conn.cursor()
+        c.execute("SELECT data_hora, usuario, acao, tabela, detalhes FROM logs_auditoria ORDER BY data_hora DESC LIMIT 500")
+        data = c.fetchall()
+        conn.close()
+        return data
+    except: return []
+
 # --- FUNÇÕES DE FUNCIONÁRIOS ---
-def add_funcionario(mat, nome, func, abrev, adm, mo, status):
+def add_funcionario(mat, nome, func, abrev, adm, mo, status, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False, "Sem conexão"
     try:
@@ -77,6 +112,7 @@ def add_funcionario(mat, nome, func, abrev, adm, mo, status):
                  (str(mat), nome, func, abrev, d_adm, mo, status))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "INSERIR/ATUALIZAR", "funcionarios", f"Mat: {mat}, Nome: {nome}")
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -98,7 +134,7 @@ def get_funcionarios():
         return result
     except: return []
 
-def update_funcionario(mat, nome, func, abrev, adm, mo, status):
+def update_funcionario(mat, nome, func, abrev, adm, mo, status, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -108,10 +144,11 @@ def update_funcionario(mat, nome, func, abrev, adm, mo, status):
                  (nome, func, abrev, d_adm, mo, status, str(mat)))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "ATUALIZAR", "funcionarios", f"Mat: {mat}, Novo Nome: {nome}")
         return True
     except: return False
 
-def delete_funcionario(mat):
+def delete_funcionario(mat, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -119,11 +156,12 @@ def delete_funcionario(mat):
         c.execute("DELETE FROM funcionarios WHERE matricula=%s", (str(mat),))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "EXCLUIR", "funcionarios", f"Mat: {mat}")
         return True
     except: return False
 
 # --- FUNÇÕES DE APONTAMENTOS ---
-def add_apontamento(mat, nome, func, equip, ativ, ent, s_a, r_a, s_f, total, data):
+def add_apontamento(mat, nome, func, equip, ativ, ent, s_a, r_a, s_f, total, data, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -133,6 +171,7 @@ def add_apontamento(mat, nome, func, equip, ativ, ent, s_a, r_a, s_f, total, dat
                  (str(mat), nome, func, equip, ativ, str(ent), str(s_a), str(r_a), str(s_f), total, d_ap))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "APONTAMENTO", "apontamentos", f"Mat: {mat}, Data: {d_ap}, Total: {total}")
         return True
     except: return False
 
@@ -158,7 +197,7 @@ def get_apontamentos_com_id():
         return [list(r) for r in data]
     except: return []
 
-def delete_apontamento_por_id(id_ap):
+def delete_apontamento_por_id(id_ap, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -166,6 +205,7 @@ def delete_apontamento_por_id(id_ap):
         c.execute("DELETE FROM apontamentos WHERE id=%s", (id_ap,))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "EXCLUIR APONTAMENTO", "apontamentos", f"ID: {id_ap}")
         return True
     except: return False
 
@@ -181,7 +221,7 @@ def get_funcoes():
         return data
     except: return []
 
-def add_funcao(nome):
+def add_funcao(nome, usuario_log="Sistema"):
     if not nome: return False
     conn = get_connection()
     if not conn: return False
@@ -190,10 +230,11 @@ def add_funcao(nome):
         c.execute("INSERT INTO funcoes VALUES (%s) ON CONFLICT DO NOTHING", (nome.strip().upper(),))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "INSERIR", "funcoes", f"Nome: {nome}")
         return True
     except: return False
 
-def delete_funcao(nome):
+def delete_funcao(nome, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -201,6 +242,7 @@ def delete_funcao(nome):
         c.execute("DELETE FROM funcoes WHERE nome=%s", (nome,))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "EXCLUIR", "funcoes", f"Nome: {nome}")
         return True
     except: return False
 
@@ -215,7 +257,7 @@ def get_equipamentos():
         return data
     except: return []
 
-def add_equipamento(nome):
+def add_equipamento(nome, usuario_log="Sistema"):
     if not nome: return False
     conn = get_connection()
     if not conn: return False
@@ -224,10 +266,11 @@ def add_equipamento(nome):
         c.execute("INSERT INTO equipamentos VALUES (%s) ON CONFLICT DO NOTHING", (nome.strip().upper(),))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "INSERIR", "equipamentos", f"Nome: {nome}")
         return True
     except: return False
 
-def delete_equipamento(nome):
+def delete_equipamento(nome, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -235,11 +278,12 @@ def delete_equipamento(nome):
         c.execute("DELETE FROM equipamentos WHERE nome=%s", (nome,))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "EXCLUIR", "equipamentos", f"Nome: {nome}")
         return True
     except: return False
 
 # --- EFETIVO DIÁRIO ---
-def add_efetivo_diario_batch(df):
+def add_efetivo_diario_batch(df, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -250,6 +294,7 @@ def add_efetivo_diario_batch(df):
                      (d_ef, str(row['Matricula']), row['Nome'], row['Funcao'], int(row['Status']), row['Situacao']))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "UPLOAD BATCH", "efetivo_diario", f"Qtd: {len(df)}")
         return True
     except: return False
 
@@ -264,7 +309,7 @@ def get_efetivo_diario():
         return [list(r) for r in data]
     except: return []
 
-def delete_efetivo_por_data(data):
+def delete_efetivo_por_data(data, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -273,11 +318,12 @@ def delete_efetivo_por_data(data):
         c.execute("DELETE FROM efetivo_diario WHERE data=%s", (d_del,))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "EXCLUIR POR DATA", "efetivo_diario", f"Data: {d_del}")
         return True
     except: return False
 
 # --- USUÁRIOS ---
-def add_usuario(user, pwd):
+def add_usuario(user, pwd, usuario_log="Sistema"):
     conn = get_connection()
     if not conn: return False
     try:
@@ -285,6 +331,7 @@ def add_usuario(user, pwd):
         c.execute("INSERT INTO usuarios VALUES (%s, %s)", (user, pwd))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "CRIAR USUÁRIO", "usuarios", f"Novo: {user}")
         return True
     except: return False
 
@@ -296,7 +343,10 @@ def check_login(user, pwd):
         c.execute("SELECT * FROM usuarios WHERE username=%s AND password=%s", (user, pwd))
         data = c.fetchone()
         conn.close()
-        return data is not None
+        if data:
+            # Não registra log aqui para não poluir, apenas no script principal se desejar
+            return True
+        return False
     except: return False
 
 def get_usuarios():
@@ -310,7 +360,7 @@ def get_usuarios():
         return data
     except: return []
 
-def delete_usuario(user):
+def delete_usuario(user, usuario_log="Sistema"):
     if user == 'admin': return False
     conn = get_connection()
     if not conn: return False
@@ -319,6 +369,7 @@ def delete_usuario(user):
         c.execute("DELETE FROM usuarios WHERE username=%s", (user,))
         conn.commit()
         conn.close()
+        registrar_log(usuario_log, "EXCLUIR USUÁRIO", "usuarios", f"Removido: {user}")
         return True
     except: return False
 

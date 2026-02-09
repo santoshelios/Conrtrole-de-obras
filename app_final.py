@@ -159,6 +159,8 @@ def get_now_br():
 # --- INICIALIZAÇÃO DE ESTADO ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
+if 'user_name' not in st.session_state:
+    st.session_state.user_name = "Visitante"
 if 'form_key' not in st.session_state:
     st.session_state.form_key = 0
 if 'splash_done' not in st.session_state:
@@ -233,11 +235,13 @@ with st.sidebar:
                 admin_password = st.secrets["credentials"]["admin_password"]
                 if user == admin_user and password == admin_password:
                     st.session_state.logged_in = True
+                    st.session_state.user_name = user
                     st.success("Bem-vindo!")
                     time.sleep(1); st.rerun()
                 else:
                     if db.check_login(user, password):
                         st.session_state.logged_in = True
+                        st.session_state.user_name = user
                         st.success("Bem-vindo!")
                         time.sleep(1); st.rerun()
                     else:
@@ -245,15 +249,17 @@ with st.sidebar:
             except:
                 if db.check_login(user, password):
                     st.session_state.logged_in = True
+                    st.session_state.user_name = user
                     st.success("Bem-vindo!")
                     time.sleep(1); st.rerun()
                 else:
                     st.error("Acesso negado")
     else:
-        st.markdown(f"<div style='text-align: center; padding: 10px; background: #f0f2f6; border-radius: 10px;'>Usuário Ativo:<br><b>{st.session_state.get('user_name', 'Gestor')}</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center; padding: 10px; background: #f0f2f6; border-radius: 10px;'>Usuário Ativo:<br><b>{st.session_state.user_name}</b></div>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("SAIR DO SISTEMA"):
             st.session_state.logged_in = False
+            st.session_state.user_name = "Visitante"
             st.rerun()
 
     st.markdown("---")
@@ -264,7 +270,7 @@ st.markdown("<h1 class='header-style'>🏗️ GRUPO SANTIN - Controle de Obras</
 
 # Definição das Abas (ORDEM CORRETA)
 if st.session_state.logged_in:
-    tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro", "👥 Gestão de Usuários"]
+    tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro", "👥 Gestão de Usuários", "🔍 Auditoria"]
 else:
     tabs_list = ["📅 Efetivo Diário", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas"]
 
@@ -284,8 +290,8 @@ with aba_view[0]:
                     if all(c in df_u.columns for c in cols_required):
                         datas_no_arquivo = df_u['Data'].unique()
                         for d in datas_no_arquivo:
-                            db.delete_efetivo_por_data(d)
-                        if db.add_efetivo_diario_batch(df_u):
+                            db.delete_efetivo_por_data(d, st.session_state.user_name)
+                        if db.add_efetivo_diario_batch(df_u, st.session_state.user_name):
                             st.success("Efetivo carregado com sucesso!")
                             time.sleep(1); st.rerun()
                     else:
@@ -378,7 +384,7 @@ if st.session_state.logged_in:
                 status = st.selectbox("Status", ["Ativo", "Inativo"])
             if st.form_submit_button("CADASTRAR COLABORADOR"):
                 if mat.isdigit() and nome:
-                    success, msg = db.add_funcionario(mat, nome, func, abrev, adm, mo, status)
+                    success, msg = db.add_funcionario(mat, nome, func, abrev, adm, mo, status, st.session_state.user_name)
                     if success: st.success("Cadastrado!"); reset_form(); time.sleep(1); st.rerun()
                     else: st.error(f"Erro: {msg}")
                 else: st.error("Preencha os campos obrigatórios.")
@@ -428,7 +434,7 @@ if st.session_state.logged_in:
                 st.info(f"Horas Trabalhadas: **{total_h}**")
             if st.form_submit_button("REGISTRAR EM OBRA"):
                 if sel_mat and equip and ativ:
-                    db.add_apontamento(sel_mat, nome_auto, funcao_auto, equip, ativ, ent, s_alm, r_alm, s_fin, total_h, data_ap)
+                    db.add_apontamento(sel_mat, nome_auto, funcao_auto, equip, ativ, ent, s_alm, r_alm, s_fin, total_h, data_ap, st.session_state.user_name)
                     st.success("Registrado!"); reset_form(); time.sleep(1); st.rerun()
                 else: st.warning("Preencha os campos obrigatórios.")
 else:
@@ -575,7 +581,7 @@ if st.session_state.logged_in:
             with st.expander("🗑️ Excluir Registros (Acesso Admin)"):
                 sel_excluir = st.multiselect("Selecione os IDs para remover", df_ap_full['ID'].tolist())
                 if st.button("EXCLUIR SELECIONADOS"):
-                    for s in sel_excluir: db.delete_apontamento_por_id(s)
+                    for s in sel_excluir: db.delete_apontamento_por_id(s, st.session_state.user_name)
                     st.success("Excluído!"); time.sleep(1); st.rerun()
 
     # GESTÃO FUNÇÕES
@@ -590,11 +596,11 @@ if st.session_state.logged_in:
             st.markdown("### Ações")
             n_f = st.text_input("Nova Função")
             if st.button("SALVAR FUNÇÃO"):
-                if db.add_funcao(n_f): st.success("Salvo!"); st.rerun()
+                if db.add_funcao(n_f, st.session_state.user_name): st.success("Salvo!"); st.rerun()
             st.markdown("---")
             f_del = st.selectbox("Remover Função", [""] + funcoes)
             if st.button("EXCLUIR FUNÇÃO"):
-                if f_del: db.delete_funcao(f_del); st.success("Removido!"); st.rerun()
+                if f_del: db.delete_funcao(f_del, st.session_state.user_name); st.success("Removido!"); st.rerun()
 
     # GESTÃO EQUIPAMENTOS
     with aba_view[8]:
@@ -608,11 +614,11 @@ if st.session_state.logged_in:
             st.markdown("### Ações")
             n_e = st.text_input("Novo Equipamento")
             if st.button("SALVAR EQUIPAMENTO"):
-                if db.add_equipamento(n_e): st.success("Salvo!"); st.rerun()
+                if db.add_equipamento(n_e, st.session_state.user_name): st.success("Salvo!"); st.rerun()
             st.markdown("---")
             e_del = st.selectbox("Remover Equipamento", [""] + equips)
             if st.button("EXCLUIR EQUIPAMENTO"):
-                if e_del: db.delete_equipamento(e_del); st.success("Removido!"); st.rerun()
+                if e_del: db.delete_equipamento(e_del, st.session_state.user_name); st.success("Removido!"); st.rerun()
 
     # ATUALIZAR DADOS
     with aba_view[9]:
@@ -631,7 +637,7 @@ if st.session_state.logged_in:
                     u_mo = st.selectbox("MO", ["MOD", "MOI"], index=0 if f_d[5] == "MOD" else 1)
                     u_st = st.selectbox("Status", ["Ativo", "Inativo"], index=0 if f_d[6] == "Ativo" else 1)
                     if st.form_submit_button("SALVAR ALTERAÇÕES"):
-                        if db.update_funcionario(s_m, u_n, u_f, u_a, u_d, u_mo, u_st):
+                        if db.update_funcionario(s_m, u_n, u_f, u_a, u_d, u_mo, u_st, st.session_state.user_name):
                             st.success("Atualizado!"); reset_form(); time.sleep(1); st.rerun()
 
     # REMOVER REGISTRO
@@ -641,7 +647,7 @@ if st.session_state.logged_in:
         if mats:
             d_m = st.selectbox("Excluir Matrícula Definitivamente", mats)
             if st.button("CONFIRMAR EXCLUSÃO"):
-                if db.delete_funcionario(d_m): st.success("Removido!"); time.sleep(1); st.rerun()
+                if db.delete_funcionario(d_m, st.session_state.user_name): st.success("Removido!"); time.sleep(1); st.rerun()
 
     # GESTÃO DE USUÁRIOS
     with aba_view[11]:
@@ -651,13 +657,24 @@ if st.session_state.logged_in:
             n_p = st.text_input("Senha", type="password")
             if st.form_submit_button("CRIAR USUÁRIO"):
                 if n_u and n_p:
-                    if db.add_usuario(n_u, n_p): st.success("Usuário criado!"); st.rerun()
+                    if db.add_usuario(n_u, n_p, st.session_state.user_name): st.success("Usuário criado!"); st.rerun()
                     else: st.error("Erro ao criar.")
         st.markdown("---")
         usuarios = db.get_usuarios()
         u_del = st.selectbox("Remover Usuário", [u for u in usuarios if u != 'admin'])
         if st.button("EXCLUIR USUÁRIO"):
-            if db.delete_usuario(u_del): st.success("Removido!"); st.rerun()
+            if db.delete_usuario(u_del, st.session_state.user_name): st.success("Removido!"); st.rerun()
+
+    # ABA DE AUDITORIA (NOVA)
+    with aba_view[12]:
+        st.subheader("🔍 Auditoria e Rastreabilidade")
+        st.info("Log das últimas 500 ações realizadas no sistema.")
+        logs = db.get_logs()
+        if logs:
+            df_logs = pd.DataFrame(logs, columns=["Data/Hora", "Usuário", "Ação", "Tabela", "Detalhes"])
+            st.dataframe(df_logs, use_container_width=True)
+        else:
+            st.warning("Nenhum log registrado ainda.")
 
 # --- FOOTER PROFISSIONAL ---
 st.markdown(f"""
