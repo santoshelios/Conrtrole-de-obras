@@ -7,6 +7,10 @@ from datetime import datetime, timedelta
 from io import BytesIO
 import pytz
 
+import requests
+import pandas as pd
+
+
 # Tenta importar o módulo db_rh
 try:
     import db_rh as db
@@ -217,6 +221,68 @@ def converter_df_para_excel(df):
     output.seek(0)
     return output
 
+
+# --- PLUVIOMETRIA CEMADEN + INMET ---
+
+def get_cemaden_barueri(data_ref):
+    try:
+        url = "https://dadosabertos.cemaden.gov.br/api/3/action/datastore_search"
+        params = {
+            "resource_id": "c6f4b9b6-3c77-4c6d-bd36-5e3b1a0f2f94",
+            "limit": 5000
+        }
+        r = requests.get(url, params=params, timeout=20)
+        r.raise_for_status()
+        records = r.json()["result"]["records"]
+        df = pd.DataFrame(records)
+
+        df = df[(df["municipio"] == "BARUERI") & (df["uf"] == "SP")]
+        df["datahora"] = pd.to_datetime(df["datahora"])
+        df = df[df["datahora"].dt.date == data_ref]
+
+        horas = {h: 0.0 for h in range(24)}
+        if df.empty:
+            return horas
+
+        col_acum = next((c for c in df.columns if "acumul" in c.lower()), None)
+        if col_acum:
+            df = df.sort_values("datahora")
+            df["hora"] = df["datahora"].dt.hour
+            df["chuva"] = df[col_acum].diff().fillna(df[col_acum])
+            for _, r in df.iterrows():
+                horas[int(r["hora"])] += max(float(r["chuva"]), 0)
+        return horas
+    except:
+        return {h: 0.0 for h in range(24)}
+
+
+def get_inmet_barueri(data_ref):
+    try:
+        url = "https://apitempo.inmet.gov.br/estacao/diaria/A701/" + data_ref.strftime("%Y-%m-%d")
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+
+        horas = {h: 0.0 for h in range(24)}
+        for item in data:
+            h = int(item.get("HORA", "00")[:2])
+            chuva = float(item.get("CHUVA", 0) or 0)
+            horas[h] += chuva
+        return horas
+    except:
+        return {h: 0.0 for h in range(24)}
+
+
+def get_pluviometria_cruzada(data_ref):
+    cem = get_cemaden_barueri(data_ref)
+    inm = get_inmet_barueri(data_ref)
+
+    horas = {}
+    for h in range(24):
+        # prioriza INMET, fallback CEMADEN
+        horas[h] = inm[h] if inm[h] > 0 else cem[h]
+    return horas
+
 # --- RELÓGIO COM FUSO BRASÍLIA ---
 now_br = get_now_br()
 st.markdown(f"<div class='clock-style'>🕒 {now_br.strftime('%d/%m/%Y - %H:%M')} (Brasília)</div>", unsafe_allow_html=True)
@@ -270,9 +336,9 @@ st.markdown("<h1 class='header-style'>🏗️ GRUPO SANTIN - Controle de Obras</
 
 # Definição das Abas (ORDEM CORRETA)
 if st.session_state.logged_in:
-    tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro", "👥 Gestão de Usuários", "🔍 Auditoria"]
+    tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro", "👥 Gestão de Usuários", "🔍 Auditoria", "🌧️ Pluviometria"]
 else:
-    tabs_list = ["📅 Efetivo Diário", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas"]
+    tabs_list = ["📅 Efetivo Diário", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "🌧️ Pluviometria"]
 
 aba_view = st.tabs(tabs_list)
 
@@ -675,6 +741,38 @@ if st.session_state.logged_in:
             st.dataframe(df_logs, use_container_width=True)
         else:
             st.warning("Nenhum log registrado ainda.")
+
+
+# --- ABA PLUVIOMETRIA ---
+pluv_index = tabs_list.index("🌧️ Pluviometria")
+
+with aba_view[pluv_index]:
+    st.subheader("🌧️ Pluviometria – CEMADEN + INMET | Barueri")
+
+    c1, c2, c3 = st.columns([2,2,1])
+    with c1:
+        st.text_input("Origem / Fonte", "CEMADEN + INMET", disabled=True)
+    with c2:
+        data_ref = st.date_input("Data", value=get_now_br().date())
+    with c3:
+        if st.button("🔄 Capturar dados"):
+            st.session_state["pluv_refresh"] = True
+
+    horas = get_pluviometria_cruzada(data_ref)
+    total_mm = sum(horas.values())
+    st.caption(f"Total no dia: {total_mm:.2f} mm")
+
+    def bloco(nome, hs):
+        st.markdown(f"**{nome}**")
+        cols = st.columns(len(hs))
+        for i, h in enumerate(hs):
+            cols[i].text_input(f"{h}h", f"{horas[h]:.2f}", disabled=True)
+
+    bloco("Manhã", [6,7,8,9,10,11])
+    bloco("Tarde", [12,13,14,15,16,17])
+    bloco("Noite", [18,19,20,21,22,23])
+    bloco("Madrugada", [0,1,2,3,4,5])
+
 
 # --- FOOTER PROFISSIONAL ---
 st.markdown(f"""
