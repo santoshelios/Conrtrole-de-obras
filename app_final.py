@@ -6,9 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from io import BytesIO
 import pytz
-
 import requests
-import pandas as pd
 
 
 # Tenta importar o módulo db_rh
@@ -181,9 +179,10 @@ if not st.session_state.splash_done:
                 <div style='margin-top: 30px; font-family: monospace; opacity: 0.8;'>Iniciando ambiente seguro...</div>
             </div>
         """, unsafe_allow_html=True)
-        time.sleep(3.0)
+        time.sleep(3.5)
     splash.empty()
     st.session_state.splash_done = True
+
 
 # --- FUNÇÕES DE AUXÍLIO ---
 def reset_form():
@@ -258,7 +257,7 @@ def get_cemaden_barueri(data_ref):
 
 def get_inmet_barueri(data_ref):
     try:
-        url = "https://apitempo.inmet.gov.br/estacao/diaria/A701/" + data_ref.strftime("%Y-%m-%d")
+        url = "https://apitempo.inmet.gov.br/estacao/diaria/A701/" + data_ref.strftime("%Y-%m-%d")       
         r = requests.get(url, timeout=20)
         r.raise_for_status()
         data = r.json()
@@ -282,6 +281,10 @@ def get_pluviometria_cruzada(data_ref):
         # prioriza INMET, fallback CEMADEN
         horas[h] = inm[h] if inm[h] > 0 else cem[h]
     return horas
+
+
+
+
 
 # --- RELÓGIO COM FUSO BRASÍLIA ---
 now_br = get_now_br()
@@ -371,7 +374,7 @@ with aba_view[0]:
         df_ef = pd.DataFrame(dados_efetivo, columns=["Data", "Matricula", "Nome", "Funcao", "Status_Val", "Situacao"])
         df_ef['Data'] = pd.to_datetime(df_ef['Data']).dt.date
         
-        st.markdown("### 🔍 Filtros de Visualização")
+        st.markdown("#### 🔍 Filtros de Visualização")
         f1, f2, f3 = st.columns(3)
         hoje = get_now_br().date()
         primeiro_dia_mes = hoje.replace(day=1)
@@ -386,13 +389,13 @@ with aba_view[0]:
         df_hist = df_ef[(df_ef['Data'] >= d_ini) & (df_ef['Data'] <= d_fim) & (df_ef['Status_Val'] == 1)]
         if not df_hist.empty:
             df_hist_count = df_hist.groupby('Data').size().reset_index(name='Quantidade')
-            fig_hist = px.line(df_hist_count, x='Data', y='Quantidade', markers=True, title="Evolução do Efetivo Presente (Status 1)", text='Quantidade')
+            fig_hist = px.line(df_hist_count, x='Data', y='Quantidade', markers=True, title="Evolução do Efetivo Presente", text='Quantidade')
             fig_hist.update_traces(textposition="top center", textfont=dict(color="black", size=12))
             fig_hist.update_layout(template="plotly_white", xaxis=dict(tickformat="%d/%m/%Y"))
             st.plotly_chart(fig_hist, width='stretch')
         
         st.markdown("---")
-        st.markdown("### 📋 Situação Mais Recente")
+        st.markdown("### 📋 Status do Dia")
         
         data_recente = df_ef['Data'].max()
         df_recente = df_ef[df_ef['Data'] == data_recente]
@@ -405,7 +408,7 @@ with aba_view[0]:
             col_graf, col_tab = st.columns([1, 1])
             with col_graf:
                 fig_status = px.bar(df_status_dia, y='Situacao', x='Total', orientation='h', 
-                                   title=f"Distribuição de Situações - {data_recente.strftime('%d/%m/%Y')}", 
+                                   title=f"Distribuição Status - {data_recente.strftime('%d/%m/%Y')}", 
                                    color_discrete_sequence=['#000000'], text_auto=True)
                 fig_status.update_layout(yaxis={'categoryorder':'total ascending'}, template="plotly_white")
                 sel_status = st.plotly_chart(fig_status, width='stretch', on_select="rerun")
@@ -426,7 +429,7 @@ with aba_view[0]:
                             for n in df_detalhe[df_detalhe['Abrev'] == a]['Nome'].tolist():
                                 st.write(f"- {n}")
                 else:
-                    st.info("Clique em uma barra do gráfico ao lado para ver os nomes.")
+                    st.info("Clique sobre o status para visualizar o efetivo.")
         else:
             st.warning(f"Nenhum dado encontrado para a data {data_recente.strftime('%d/%m/%Y')} com o filtro selecionado.")
     else:
@@ -464,11 +467,28 @@ else:
             with m1: st.markdown(f"<div class='metric-card'><h3>Total Efetivo</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
             with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['Status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
             with m3: st.markdown(f"<div class='metric-card'><h3>Inativos</h3><h2 style='color: red;'>{len(df[df['Status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
-            df['Abrev_Upper'] = df['Abrev.'].str.upper()
-            counts = df['Abrev_Upper'].value_counts().reset_index()
+            # FILTRA APENAS COLABORADORES ATIVOS PARA O GRÁFICO
+            df_ativos = df[df['Status'] == 'Ativo'].copy()
+            df_ativos['Abrev_Upper'] = df_ativos['Abrev.'].str.upper()
+
+            counts = df_ativos['Abrev_Upper'].value_counts().reset_index()
             counts.columns = ['Função', 'Quantidade']
-            fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Abreviação)", color_discrete_sequence=['#FFD700'], text_auto=True)
-            fig.update_layout(xaxis=dict(tickangle=-45, automargin=True), margin=dict(b=120), template="plotly_white")
+
+            fig = px.bar(
+                counts,
+                x='Função',
+                y='Quantidade',
+                title="Efetivo por Função (Somente Ativos)",
+                color_discrete_sequence=['#FFD700'],
+                text_auto=True
+            )
+
+            fig.update_layout(
+                xaxis=dict(tickangle=-45, automargin=True),
+                margin=dict(b=120),
+                template="plotly_white"
+            )
+
             st.plotly_chart(fig, width='stretch')
 
 # --- ABA 2: APONTAR HORAS (LOGADO) / DASH PRODUTIVIDADE (PÚBLICO) ---
@@ -548,11 +568,28 @@ if st.session_state.logged_in:
             with m1: st.markdown(f"<div class='metric-card'><h3>Total Efetivo</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
             with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['Status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
             with m3: st.markdown(f"<div class='metric-card'><h3>Inativos</h3><h2 style='color: red;'>{len(df[df['Status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
-            df['Abrev_Upper'] = df['Abrev.'].str.upper()
-            counts = df['Abrev_Upper'].value_counts().reset_index()
+            # FILTRA APENAS COLABORADORES ATIVOS PARA O GRÁFICO
+            df_ativos = df[df['Status'] == 'Ativo'].copy()
+            df_ativos['Abrev_Upper'] = df_ativos['Abrev.'].str.upper()
+
+            counts = df_ativos['Abrev_Upper'].value_counts().reset_index()
             counts.columns = ['Função', 'Quantidade']
-            fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Abreviação)", color_discrete_sequence=['#FFD700'], text_auto=True)
-            fig.update_layout(xaxis=dict(tickangle=-45, automargin=True), margin=dict(b=120), template="plotly_white")
+
+            fig = px.bar(
+                counts,
+                x='Função',
+                y='Quantidade',
+                title="Efetivo por Função (Somente Ativos)",
+                color_discrete_sequence=['#FFD700'],
+                text_auto=True
+            )
+
+            fig.update_layout(
+                xaxis=dict(tickangle=-45, automargin=True),
+                margin=dict(b=120),
+                template="plotly_white"
+            )
+
             st.plotly_chart(fig, width='stretch')
 else:
     with aba_view[3]:
