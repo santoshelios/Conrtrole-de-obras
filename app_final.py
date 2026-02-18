@@ -223,63 +223,90 @@ def converter_df_para_excel(df):
 
 # --- PLUVIOMETRIA CEMADEN + INMET ---
 
+
 def get_cemaden_barueri(data_ref):
     try:
+        import socket
+        debug_info = {}
+
+        # 🔎 Teste DNS
+        try:
+            ip = socket.gethostbyname("dadosabertos.cemaden.gov.br")
+            debug_info["DNS_RESOLVIDO_IP"] = ip
+        except Exception as dns_err:
+            debug_info["DNS_ERRO"] = str(dns_err)
+            st.error(f"❌ ERRO DNS: {dns_err}")
+            return {h: 0.0 for h in range(24)}
+
         url = "https://dadosabertos.cemaden.gov.br/api/3/action/datastore_search"
         params = {
             "resource_id": "c6f4b9b6-3c77-4c6d-bd36-5e3b1a0f2f94",
             "limit": 5000
         }
+
         r = requests.get(url, params=params, timeout=20)
-        r.raise_for_status()
-        records = r.json()["result"]["records"]
+        debug_info["STATUS_CODE"] = r.status_code
+
+        if r.status_code != 200:
+            st.error(f"❌ ERRO HTTP CEMADEN: {r.status_code}")
+            return {h: 0.0 for h in range(24)}
+
+        data_json = r.json()
+        records = data_json["result"]["records"]
+
+        if not records:
+            st.warning("⚠️ CEMADEN respondeu mas não retornou registros.")
+            return {h: 0.0 for h in range(24)}
+
         df = pd.DataFrame(records)
 
-        df = df[(df["municipio"] == "BARUERI") & (df["uf"] == "SP")]
-        df["datahora"] = pd.to_datetime(df["datahora"])
+        st.info(f"🔍 DEBUG: {len(df)} registros recebidos da API.")
+        st.write("Colunas disponíveis:", list(df.columns))
+
+        # 🔥 Filtrar pela estação 7033 se existir coluna
+        possible_cols = [c for c in df.columns if "estacao" in c.lower()]
+        if possible_cols:
+            col_est = possible_cols[0]
+            df = df[df[col_est].astype(str) == "7033"]
+
+        if df.empty:
+            st.warning("⚠️ Nenhum registro da estação 7033 encontrado no lote retornado.")
+            return {h: 0.0 for h in range(24)}
+
+        df["datahora"] = pd.to_datetime(df["datahora"], errors="coerce")
         df = df[df["datahora"].dt.date == data_ref]
 
-        horas = {h: 0.0 for h in range(24)}
         if df.empty:
-            return horas
+            st.warning("⚠️ A estação respondeu, mas não há dados para a data selecionada.")
+            return {h: 0.0 for h in range(24)}
+
+        horas = {h: 0.0 for h in range(24)}
 
         col_acum = next((c for c in df.columns if "acumul" in c.lower()), None)
+
         if col_acum:
             df = df.sort_values("datahora")
             df["hora"] = df["datahora"].dt.hour
             df["chuva"] = df[col_acum].diff().fillna(df[col_acum])
-            for _, r in df.iterrows():
-                horas[int(r["hora"])] += max(float(r["chuva"]), 0)
+
+            for _, row in df.iterrows():
+                hora = int(row["hora"])
+                valor = max(float(row["chuva"]), 0)
+                horas[hora] += valor
+
         return horas
-    except:
+
+    except Exception as e:
+        st.error(f"❌ ERRO CEMADEN: {e}")
         return {h: 0.0 for h in range(24)}
-
-
-def get_inmet_barueri(data_ref):
-    try:
-        url = "https://apitempo.inmet.gov.br/estacao/diaria/A701/" + data_ref.strftime("%Y-%m-%d")       
-        r = requests.get(url, timeout=20)
-        r.raise_for_status()
-        data = r.json()
-
-        horas = {h: 0.0 for h in range(24)}
-        for item in data:
-            h = int(item.get("HORA", "00")[:2])
-            chuva = float(item.get("CHUVA", 0) or 0)
-            horas[h] += chuva
-        return horas
-    except:
-        return {h: 0.0 for h in range(24)}
-
-
 def get_pluviometria_cruzada(data_ref):
-    cem = get_cemaden_barueri(data_ref)
-    inm = get_inmet_barueri(data_ref)
+    # 🔥 Agora usa apenas CEMADEN estação 7033
+    horas = get_cemaden_barueri(data_ref)
 
-    horas = {}
-    for h in range(24):
-        # prioriza INMET, fallback CEMADEN
-        horas[h] = inm[h] if inm[h] > 0 else cem[h]
+    # Se não houver dados, retorna zeros
+    if not horas:
+        return {h: 0.0 for h in range(24)}
+
     return horas
 
 
@@ -389,9 +416,37 @@ with aba_view[0]:
         df_hist = df_ef[(df_ef['Data'] >= d_ini) & (df_ef['Data'] <= d_fim) & (df_ef['Status_Val'] == 1)]
         if not df_hist.empty:
             df_hist_count = df_hist.groupby('Data').size().reset_index(name='Quantidade')
-            fig_hist = px.line(df_hist_count, x='Data', y='Quantidade', markers=True, title="Evolução do Efetivo Presente", text='Quantidade')
-            fig_hist.update_traces(textposition="top center", textfont=dict(color="black", size=12))
-            fig_hist.update_layout(template="plotly_white", xaxis=dict(tickformat="%d/%m/%Y"))
+
+            # Criar intervalo completo de datas
+            intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
+            df_full = pd.DataFrame({'Data': intervalo_datas})
+            df_hist_count['Data'] = pd.to_datetime(df_hist_count['Data'])
+            df_full = df_full.merge(df_hist_count, on='Data', how='left').fillna(0)
+            df_full['Quantidade'] = df_full['Quantidade'].astype(int)
+
+            fig_hist = px.line(
+                df_full,
+                x='Data',
+                y='Quantidade',
+                title="Evolução do Efetivo Presente",
+                markers=True,
+                line_shape='linear',
+                text='Quantidade'
+            )
+
+            fig_hist.update_traces(
+                marker=dict(size=7, color='black'),
+                line=dict(width=3),
+                textposition="top center"
+            )
+
+            fig_hist.update_layout(
+                template="plotly_white",
+                xaxis=dict(tickformat="%d/%m/%Y"),
+                hovermode="x unified",
+                yaxis=dict(range=[0, df_full['Quantidade'].max() + 2])
+            )
+
             st.plotly_chart(fig_hist, width='stretch')
         
         st.markdown("---")
@@ -597,7 +652,38 @@ else:
         dados = db.get_funcionarios()
         if dados:
             df = pd.DataFrame(dados, columns=["Matrícula", "Nome", "Função", "Abrev.", "Admissão", "MO", "Status"])
-            st.dataframe(df.map(lambda x: str(x).upper() if pd.notnull(x) else x), width='stretch')
+
+            # 🔎 Filtros de Busca
+            st.markdown("### 🔎 Filtros de Busca")
+
+            col_f1, col_f2, col_f3 = st.columns(3)
+
+            with col_f1:
+                filtro_nome = st.text_input("Buscar por Nome")
+
+            with col_f2:
+                filtro_matricula = st.text_input("Buscar por Matrícula")
+
+            with col_f3:
+                filtro_funcao = st.text_input("Buscar por Função")
+
+            df_filtrado = df.copy()
+
+            if filtro_nome:
+                df_filtrado = df_filtrado[df_filtrado["Nome"].str.contains(filtro_nome, case=False, na=False)]
+
+            if filtro_matricula:
+                df_filtrado = df_filtrado[df_filtrado["Matrícula"].astype(str).str.contains(filtro_matricula, case=False, na=False)]
+
+            if filtro_funcao:
+                df_filtrado = df_filtrado[df_filtrado["Função"].str.contains(filtro_funcao, case=False, na=False)]
+
+            st.markdown("---")
+
+            st.dataframe(
+                df_filtrado.map(lambda x: str(x).upper() if pd.notnull(x) else x),
+                width='stretch'
+            )
 
 # --- ABA 4: DASH PRODUTIVIDADE (LOGADO) / REGISTROS DE HORAS (PÚBLICO) ---
 if st.session_state.logged_in:
@@ -671,8 +757,37 @@ if st.session_state.logged_in:
             
             st.markdown("</div>", unsafe_allow_html=True)
             
-            # Exibir tabela
-            st.dataframe(df.map(lambda x: str(x).upper() if pd.notnull(x) else x), width='stretch')
+            # 🔎 Filtros de Busca
+            st.markdown("### 🔎 Filtros de Busca")
+
+            col_f1, col_f2, col_f3 = st.columns(3)
+
+            with col_f1:
+                filtro_nome = st.text_input("Buscar por Nome")
+
+            with col_f2:
+                filtro_matricula = st.text_input("Buscar por Matrícula")
+
+            with col_f3:
+                filtro_funcao = st.text_input("Buscar por Função")
+
+            df_filtrado = df.copy()
+
+            if filtro_nome:
+                df_filtrado = df_filtrado[df_filtrado["Nome"].str.contains(filtro_nome, case=False, na=False)]
+
+            if filtro_matricula:
+                df_filtrado = df_filtrado[df_filtrado["Matrícula"].astype(str).str.contains(filtro_matricula, case=False, na=False)]
+
+            if filtro_funcao:
+                df_filtrado = df_filtrado[df_filtrado["Função"].str.contains(filtro_funcao, case=False, na=False)]
+
+            st.markdown("---")
+
+            st.dataframe(
+                df_filtrado.map(lambda x: str(x).upper() if pd.notnull(x) else x),
+                width='stretch'
+            )
 
     # REGISTROS DE HORAS
     with aba_view[6]:
@@ -798,6 +913,9 @@ with aba_view[pluv_index]:
     horas = get_pluviometria_cruzada(data_ref)
     total_mm = sum(horas.values())
     st.caption(f"Total no dia: {total_mm:.2f} mm")
+
+    if total_mm == 0:
+        st.warning("⚠️ Nenhum dado retornado da estação CEMADEN 7033 para esta data.")
 
     def bloco(nome, hs):
         st.markdown(f"**{nome}**")
