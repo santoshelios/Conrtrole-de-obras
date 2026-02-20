@@ -948,9 +948,23 @@ def render_pluviometria():
             fig_prev.add_scatter(
                 x=df_prev["Data"],
                 y=df_prev["Probabilidade (%)"],
-                mode="lines+markers",
+                mode="lines+markers+text",
                 name="Probabilidade (%)",
-                yaxis="y2"
+                yaxis="y2",
+                text=[f"{int(v)}%" for v in df_prev["Probabilidade (%)"]],
+                textposition="top center",
+                textfont=dict(
+                    color="black",
+                    size=12
+                ),
+                line=dict(
+                    width=3,
+                    color="#FF6B00"
+                ),
+                marker=dict(
+                    size=8,
+                    color="#FF6B00"
+                )
             )
 
             fig_prev.update_layout(
