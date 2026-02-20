@@ -893,6 +893,28 @@ def render_pluviometria():
     except:
         acumulado_mes = 0.0
 
+    # --- BOTÃO ADMIN: SALVAR PLUVIOMETRIA ---
+    admin_user = None
+    try:
+        admin_user = st.secrets["credentials"]["admin_user"]
+    except:
+        admin_user = "admin"
+
+    if st.session_state.get("user_name") == admin_user:
+        st.markdown("---")
+        if st.button("💾 Salvar Pluviometria no Banco"):
+            sucesso = db.add_pluviometria(
+                data_ref,
+                horas,
+                st.session_state.get("user_name", "admin")
+            )
+
+            if sucesso:
+                st.success("Pluviometria salva com sucesso no banco.")
+            else:
+                st.warning("Não foi possível salvar.")
+
+
     col1, col2 = st.columns(2)
     with col1:
         st.metric("🌧️ Volume Hoje (mm)", f"{total_mm:.2f}")

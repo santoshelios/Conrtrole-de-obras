@@ -390,6 +390,7 @@ init_db()
 
 # --- PLUVIOMETRIA ---
 
+
 def add_pluviometria(data_ref, horas_dict, usuario="Sistema"):
     conn = get_connection()
     if not conn:
@@ -397,13 +398,23 @@ def add_pluviometria(data_ref, horas_dict, usuario="Sistema"):
     try:
         c = conn.cursor()
 
-        # Remove registros existentes da data
+        # 🔥 Remove registros antigos da data
         c.execute("DELETE FROM pluviometria WHERE data=%s", (data_ref,))
 
+        # 🔥 Insere as 24 horas completas com origem
         for hora, valor in horas_dict.items():
             c.execute(
-                "INSERT INTO pluviometria (data, hora, chuva_mm, usuario) VALUES (%s, %s, %s, %s)",
-                (data_ref, hora, valor, usuario)
+                """
+                INSERT INTO pluviometria (data, hora, chuva_mm, origem, usuario)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    data_ref,
+                    int(hora),
+                    float(valor),
+                    "OPEN-METEO",
+                    usuario
+                )
             )
 
         conn.commit()
@@ -415,7 +426,6 @@ def add_pluviometria(data_ref, horas_dict, usuario="Sistema"):
     except Exception as e:
         print("Erro ao salvar pluviometria:", e)
         return False
-
 
 def get_pluviometria_periodo(data_ini, data_fim):
     conn = get_connection()
