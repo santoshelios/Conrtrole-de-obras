@@ -56,6 +56,17 @@ def init_db():
         
         c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT)')
         
+        
+        # TABELA PLUVIOMETRIA
+        c.execute('''CREATE TABLE IF NOT EXISTS pluviometria (
+                        id SERIAL PRIMARY KEY,
+                        data DATE NOT NULL,
+                        hora INTEGER NOT NULL,
+                        chuva_mm NUMERIC(6,2) NOT NULL,
+                        origem TEXT DEFAULT 'OPEN-METEO',
+                        usuario TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
         # TABELA DE LOGS (RASTREABILIDADE)
         c.execute('''CREATE TABLE IF NOT EXISTS logs_auditoria (
                         id SERIAL PRIMARY KEY, 
@@ -66,7 +77,7 @@ def init_db():
                         detalhes TEXT)''')
         
         # Desativa RLS para facilitar o acesso via código
-        for t in ['funcionarios', 'apontamentos', 'funcoes', 'equipamentos', 'efetivo_diario', 'usuarios', 'logs_auditoria']:
+        for t in ['funcionarios', 'apontamentos', 'funcoes', 'equipamentos', 'efetivo_diario', 'usuarios', 'logs_auditoria', 'pluviometria']:
             try: c.execute(f"ALTER TABLE {t} DISABLE ROW LEVEL SECURITY;")
             except: pass
             
@@ -375,3 +386,52 @@ def delete_usuario(user, usuario_log="Sistema"):
 
 # Inicialização automática
 init_db()
+
+
+# --- PLUVIOMETRIA ---
+
+def add_pluviometria(data_ref, horas_dict, usuario="Sistema"):
+    conn = get_connection()
+    if not conn:
+        return False
+    try:
+        c = conn.cursor()
+
+        # Remove registros existentes da data
+        c.execute("DELETE FROM pluviometria WHERE data=%s", (data_ref,))
+
+        for hora, valor in horas_dict.items():
+            c.execute(
+                "INSERT INTO pluviometria (data, hora, chuva_mm, usuario) VALUES (%s, %s, %s, %s)",
+                (data_ref, hora, valor, usuario)
+            )
+
+        conn.commit()
+        conn.close()
+
+        registrar_log(usuario, "SALVAR PLUVIOMETRIA", "pluviometria", f"Data: {data_ref}")
+        return True
+
+    except Exception as e:
+        print("Erro ao salvar pluviometria:", e)
+        return False
+
+
+def get_pluviometria_periodo(data_ini, data_fim):
+    conn = get_connection()
+    if not conn:
+        return []
+
+    try:
+        c = conn.cursor()
+        c.execute(
+            "SELECT data, hora, chuva_mm FROM pluviometria WHERE data BETWEEN %s AND %s ORDER BY data, hora",
+            (data_ini, data_fim)
+        )
+
+        dados = c.fetchall()
+        conn.close()
+        return dados
+
+    except Exception:
+        return []

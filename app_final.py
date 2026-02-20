@@ -224,94 +224,55 @@ def converter_df_para_excel(df):
 # --- PLUVIOMETRIA CEMADEN + INMET ---
 
 
-def get_cemaden_barueri(data_ref):
+
+def get_pluviometria_cruzada(data_ref):
     try:
-        import socket
-        debug_info = {}
+        latitude = -23.505
+        longitude = -46.879
 
-        # 🔎 Teste DNS
-        try:
-            ip = socket.gethostbyname("dadosabertos.cemaden.gov.br")
-            debug_info["DNS_RESOLVIDO_IP"] = ip
-        except Exception as dns_err:
-            debug_info["DNS_ERRO"] = str(dns_err)
-            st.error(f"❌ ERRO DNS: {dns_err}")
-            return {h: 0.0 for h in range(24)}
+        data_str = data_ref.strftime("%Y-%m-%d")
 
-        url = "https://dadosabertos.cemaden.gov.br/api/3/action/datastore_search"
-        params = {
-            "resource_id": "c6f4b9b6-3c77-4c6d-bd36-5e3b1a0f2f94",
-            "limit": 5000
-        }
+        url = (
+            "https://archive-api.open-meteo.com/v1/archive"
+            f"?latitude={latitude}"
+            f"&longitude={longitude}"
+            f"&start_date={data_str}"
+            f"&end_date={data_str}"
+            "&hourly=precipitation"
+            "&timezone=America/Sao_Paulo"
+        )
 
-        r = requests.get(url, params=params, timeout=20)
-        debug_info["STATUS_CODE"] = r.status_code
-
-        if r.status_code != 200:
-            st.error(f"❌ ERRO HTTP CEMADEN: {r.status_code}")
-            return {h: 0.0 for h in range(24)}
-
-        data_json = r.json()
-        records = data_json["result"]["records"]
-
-        if not records:
-            st.warning("⚠️ CEMADEN respondeu mas não retornou registros.")
-            return {h: 0.0 for h in range(24)}
-
-        df = pd.DataFrame(records)
-
-        st.info(f"🔍 DEBUG: {len(df)} registros recebidos da API.")
-        st.write("Colunas disponíveis:", list(df.columns))
-
-        # 🔥 Filtrar pela estação 7033 se existir coluna
-        possible_cols = [c for c in df.columns if "estacao" in c.lower()]
-        if possible_cols:
-            col_est = possible_cols[0]
-            df = df[df[col_est].astype(str) == "7033"]
-
-        if df.empty:
-            st.warning("⚠️ Nenhum registro da estação 7033 encontrado no lote retornado.")
-            return {h: 0.0 for h in range(24)}
-
-        df["datahora"] = pd.to_datetime(df["datahora"], errors="coerce")
-        df = df[df["datahora"].dt.date == data_ref]
-
-        if df.empty:
-            st.warning("⚠️ A estação respondeu, mas não há dados para a data selecionada.")
-            return {h: 0.0 for h in range(24)}
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        data = r.json()
 
         horas = {h: 0.0 for h in range(24)}
 
-        col_acum = next((c for c in df.columns if "acumul" in c.lower()), None)
+        if "hourly" not in data:
+            return horas
 
-        if col_acum:
-            df = df.sort_values("datahora")
-            df["hora"] = df["datahora"].dt.hour
-            df["chuva"] = df[col_acum].diff().fillna(df[col_acum])
+        horas_lista = data["hourly"].get("time", [])
+        chuva_lista = data["hourly"].get("precipitation", [])
 
-            for _, row in df.iterrows():
-                hora = int(row["hora"])
-                valor = max(float(row["chuva"]), 0)
-                horas[hora] += valor
+        agora = datetime.now(pytz.timezone("America/Sao_Paulo"))
+
+        for t, chuva in zip(horas_lista, chuva_lista):
+            try:
+                hora = int(t[11:13])
+
+                # Remove horas futuras no dia atual
+                if data_ref == agora.date() and hora > agora.hour:
+                    continue
+
+                horas[hora] += float(chuva or 0)
+            except:
+                continue
 
         return horas
 
     except Exception as e:
-        st.error(f"❌ ERRO CEMADEN: {e}")
+        st.error(f"❌ ERRO OPEN-METEO: {e}")
         return {h: 0.0 for h in range(24)}
-def get_pluviometria_cruzada(data_ref):
-    # 🔥 Agora usa apenas CEMADEN estação 7033
-    horas = get_cemaden_barueri(data_ref)
-
-    # Se não houver dados, retorna zeros
-    if not horas:
-        return {h: 0.0 for h in range(24)}
-
-    return horas
-
-
-
-
 
 # --- RELÓGIO COM FUSO BRASÍLIA ---
 now_br = get_now_br()
@@ -366,9 +327,9 @@ st.markdown("<h1 class='header-style'>🏗️ GRUPO SANTIN - Controle de Obras</
 
 # Definição das Abas (ORDEM CORRETA)
 if st.session_state.logged_in:
-    tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro", "👥 Gestão de Usuários", "🔍 Auditoria", "🌧️ Pluviometria"]
+    tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro", "👥 Gestão de Usuários", "🔍 Auditoria", "🌧️ Pluviometria", "🌧️ Histórico Chuva"]
 else:
-    tabs_list = ["📅 Efetivo Diário", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "🌧️ Pluviometria"]
+    tabs_list = ["📅 Efetivo Diário", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "🌧️ Pluviometria", "🌧️ Histórico Chuva"]
 
 aba_view = st.tabs(tabs_list)
 
@@ -895,40 +856,124 @@ if st.session_state.logged_in:
             st.warning("Nenhum log registrado ainda.")
 
 
-# --- ABA PLUVIOMETRIA ---
-pluv_index = tabs_list.index("🌧️ Pluviometria")
 
-with aba_view[pluv_index]:
-    st.subheader("🌧️ Pluviometria – CEMADEN + INMET | Barueri")
+# --- ABA PLUVIOMETRIA ---
+def render_pluviometria():
+
+    st.subheader("🌧️ Pluviometria – Open-Meteo | Barueri")
 
     c1, c2, c3 = st.columns([2,2,1])
     with c1:
-        st.text_input("Origem / Fonte", "CEMADEN + INMET", disabled=True)
+        st.text_input("Origem / Fonte", "Open-Meteo", disabled=True)
     with c2:
         data_ref = st.date_input("Data", value=get_now_br().date())
     with c3:
-        if st.button("🔄 Capturar dados"):
-            st.session_state["pluv_refresh"] = True
+        st.button("🔄 Atualizar")
 
     horas = get_pluviometria_cruzada(data_ref)
     total_mm = sum(horas.values())
-    st.caption(f"Total no dia: {total_mm:.2f} mm")
 
-    if total_mm == 0:
-        st.warning("⚠️ Nenhum dado retornado da estação CEMADEN 7033 para esta data.")
+    inicio_mes = data_ref.replace(day=1)
 
-    def bloco(nome, hs):
-        st.markdown(f"**{nome}**")
-        cols = st.columns(len(hs))
-        for i, h in enumerate(hs):
-            cols[i].text_input(f"{h}h", f"{horas[h]:.2f}", disabled=True)
+    url_mes = (
+        "https://archive-api.open-meteo.com/v1/archive"
+        f"?latitude=-23.505"
+        f"&longitude=-46.879"
+        f"&start_date={inicio_mes.strftime('%Y-%m-%d')}"
+        f"&end_date={data_ref.strftime('%Y-%m-%d')}"
+        "&daily=precipitation_sum"
+        "&timezone=America/Sao_Paulo"
+    )
 
-    bloco("Manhã", [6,7,8,9,10,11])
-    bloco("Tarde", [12,13,14,15,16,17])
-    bloco("Noite", [18,19,20,21,22,23])
-    bloco("Madrugada", [0,1,2,3,4,5])
+    try:
+        r_mes = requests.get(url_mes, timeout=20)
+        r_mes.raise_for_status()
+        dados_mes = r_mes.json()
+        acumulado_mes = sum(dados_mes.get("daily", {}).get("precipitation_sum", []))
+    except:
+        acumulado_mes = 0.0
 
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("🌧️ Volume Hoje (mm)", f"{total_mm:.2f}")
+    with col2:
+        st.metric("📅 Acumulado no Mês (mm)", f"{acumulado_mes:.2f}")
 
+    for periodo, horas_lista in {
+        "Manhã":[6,7,8,9,10,11],
+        "Tarde":[12,13,14,15,16,17],
+        "Noite":[18,19,20,21,22,23],
+        "Madrugada":[0,1,2,3,4,5]
+    }.items():
+
+        st.markdown(f"### {periodo}")
+        cols = st.columns(6)
+        for i, h in enumerate(horas_lista):
+            with cols[i]:
+                st.markdown(f"**{h}h**")
+                st.markdown(
+                    f"<div style='background:#FFD700;padding:8px;border-radius:8px;text-align:center;font-weight:700;color:#000'>{horas[h]:.2f} mm</div>",
+                    unsafe_allow_html=True
+                )
+
+    st.markdown("## 📅 Previsão – Próximos 7 Dias (Barueri)")
+
+    try:
+        forecast_url = (
+            "https://api.open-meteo.com/v1/forecast"
+            "?latitude=-23.505"
+            "&longitude=-46.879"
+            "&daily=precipitation_sum,precipitation_probability_max"
+            "&timezone=America/Sao_Paulo"
+        )
+
+        r_prev = requests.get(forecast_url, timeout=20)
+        r_prev.raise_for_status()
+        dados_prev = r_prev.json()
+
+        if "daily" in dados_prev:
+            df_prev = pd.DataFrame({
+                "Data": dados_prev["daily"]["time"],
+                "Precipitação (mm)": dados_prev["daily"]["precipitation_sum"],
+                "Probabilidade (%)": dados_prev["daily"]["precipitation_probability_max"]
+            })
+
+            fig_prev = px.bar(
+                df_prev,
+                x="Data",
+                y="Precipitação (mm)",
+                text_auto=True
+            )
+
+            fig_prev.add_scatter(
+                x=df_prev["Data"],
+                y=df_prev["Probabilidade (%)"],
+                mode="lines+markers",
+                name="Probabilidade (%)",
+                yaxis="y2"
+            )
+
+            fig_prev.update_layout(
+                title="Precipitação e Probabilidade – Próximos 7 Dias",
+                title_x=0.5,
+                yaxis=dict(title="Precipitação (mm)"),
+                yaxis2=dict(
+                    title="Probabilidade (%)",
+                    overlaying="y",
+                    side="right"
+                )
+            )
+
+            st.plotly_chart(fig_prev, use_container_width=True)
+
+    except:
+        st.warning("Não foi possível carregar previsão.")
+
+pluv_index = tabs_list.index("🌧️ Pluviometria")
+with aba_view[pluv_index]:
+    render_pluviometria()
+
+# --- FOOTER PROFISSIONAL ---
 # --- FOOTER PROFISSIONAL ---
 st.markdown(f"""
     <div class='footer'>
@@ -940,3 +985,71 @@ st.markdown(f"""
         <a href='https://app.xperiun.com//in/heliossantos' target='_blank'>🌐 Portfólio</a>
     </div>
 """, unsafe_allow_html=True)
+
+
+
+
+
+# --- ABA HISTÓRICO DE CHUVA ---
+if "🌧️ Histórico Chuva" in tabs_list:
+    hist_index = tabs_list.index("🌧️ Histórico Chuva")
+    with aba_view[hist_index]:
+        st.subheader("🌧️ Histórico de Pluviometria")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            d_ini = st.date_input(
+                "Data Início",
+                value=get_now_br().date().replace(day=1),
+                key="hist_ini"
+            )
+
+        with col2:
+            d_fim = st.date_input(
+                "Data Fim",
+                value=get_now_br().date(),
+                key="hist_fim"
+            )
+
+        dados = db.get_pluviometria_periodo(d_ini, d_fim)
+
+        if dados:
+            df_hist = pd.DataFrame(
+                dados,
+                columns=["Data", "Hora", "Chuva (mm)"]
+            )
+
+            # 🔍 Dataframe dentro de expander
+            with st.expander("🔍 Ver dados detalhados por hora"):
+                df_formatado = df_hist.copy()
+                df_formatado["Hora"] = df_formatado["Hora"].astype(str) + "h"
+                st.dataframe(
+                    df_formatado.sort_values(["Data", "Hora"]),
+                    use_container_width=True
+                )
+
+            # 📊 Gráfico principal (Total diário)
+            df_total = (
+                df_hist.groupby("Data")["Chuva (mm)"]
+                .sum()
+                .reset_index()
+            )
+
+            fig = px.bar(
+                df_total,
+                x="Data",
+                y="Chuva (mm)",
+                title="Total Diário de Chuva",
+                text_auto=True
+            )
+
+            fig.update_layout(
+                xaxis_title="Data",
+                yaxis_title="Chuva (mm)",
+                title_x=0.5
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+          
