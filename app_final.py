@@ -23,135 +23,70 @@ st.set_page_config(
 )
 
 # --- ESTILIZAÇÃO CUSTOMIZADA (Padrão Corporativo) ---
+
 st.markdown("""
-    <style>
-    .main { background-color: #FFFFFF; }
-    
-    /* Botões Grandes e Centralizados */
-    .stButton>button { 
-        border-radius: 8px; 
-        height: 3.5em; 
-        width: 100%; 
-        background-color: #FFD700;
-        color: #000000;
-        font-weight: bold;
-        border: 2px solid #000000;
-        font-size: 16px;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        background-color: #000000;
-        color: #FFD700;
-        border: 2px solid #FFD700;
-    }
-    
-    /* Cards de Métricas */
-    .metric-card {
-        background-color: #F8F9FA;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        text-align: center;
-        border-top: 6px solid #FFD700;
-        border-left: 1px solid #DEE2E6;
-        margin-bottom: 20px;
-    }
-    
-    /* Cabeçalhos */
-    .header-style {
-        color: #000000;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        border-bottom: 4px solid #FFD700;
-        padding-bottom: 12px;
-        margin-bottom: 25px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    /* Relógio */
-    .clock-style {
-        text-align: right;
-        font-size: 15px;
-        color: #333;
-        font-weight: 600;
-        margin-bottom: -45px;
-        padding-right: 10px;
-    }
-    
-    /* Footer */
-    .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: #f1f1f1;
-        color: #333;
-        text-align: center;
-        padding: 10px;
-        font-size: 14px;
-        border-top: 2px solid #FFD700;
-        z-index: 999;
-    }
-    .footer a {
-        margin: 0 15px;
-        text-decoration: none;
-        color: #000;
-        font-weight: bold;
-    }
-    
-    /* Splash Screen Animado */
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-    
-    #splash-screen {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: #000;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 9999;
-        color: #FFD700;
-        flex-direction: column;
-        animation: fadeIn 1s ease-in;
-    }
-    .splash-logo {
-        font-size: 60px;
-        font-weight: 900;
-        animation: pulse 2s infinite;
-        text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
-    }
-    
-    /* Botão de Download Excel Estilizado */
-    .download-excel-btn {
-        display: inline-block;
-        padding: 10px 20px;
-        background: linear-gradient(135deg, #1e7e34 0%, #28a745 100%);
-        color: white;
-        text-decoration: none;
-        border-radius: 8px;
-        font-weight: bold;
-        font-size: 14px;
-        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
-        transition: all 0.3s ease;
-        border: 2px solid #1e7e34;
-        text-align: center;
-        cursor: pointer;
-    }
-    .download-excel-btn:hover {
-        background: linear-gradient(135deg, #155724 0%, #1e7e34 100%);
-        box-shadow: 0 6px 16px rgba(40, 167, 69, 0.5);
-        transform: translateY(-2px);
-    }
-    .download-excel-btn:active {
-        transform: translateY(0px);
-    }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+
+.main { background-color: #F4F6F9; }
+
+[data-testid="stSidebar"] { background-color: #0F172A; }
+[data-testid="stSidebar"] * { color: #E2E8F0 !important; }
+
+.header-style {
+    color: #111827;
+    font-weight: 800;
+    font-size: 30px;
+    margin-bottom: 35px;
+}
+
+.stButton>button {
+    border-radius: 12px;
+    height: 3.2em;
+    background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
+    color: white;
+    font-weight: 600;
+    border: none;
+    transition: 0.2s ease-in-out;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+.stButton>button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.4);
+}
+
+.user-card {
+    background-color: #1E293B;
+    padding: 15px;
+    border-radius: 12px;
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+div[data-testid="metric-container"] {
+    background-color: white;
+    padding: 22px;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    border: 1px solid #E5E7EB;
+}
+
+.js-plotly-plot .plotly text {
+    font-size: 14px !important;
+    font-weight: 600 !important;
+}
+
+.sidebar-footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #334155;
+    font-size: 13px;
+    color: #CBD5E1;
+    text-align: center;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 
 # --- CORREÇÃO DE HORÁRIO (Brasília) ---
 def get_now_br():
@@ -319,8 +254,8 @@ with st.sidebar:
             st.session_state.user_name = "Visitante"
             st.rerun()
 
-    st.markdown("---")
-    st.info("Sistema de Gestão de Obras v2.0")
+    #st.markdown("---")
+    #st.info("Sistema de Gestão de Obras v2.0")
 
 # --- CORPO PRINCIPAL ---
 st.markdown("<h1 class='header-style'>🏗️ GRUPO SANTIN - Controle de Obras</h1>", unsafe_allow_html=True)
@@ -1012,7 +947,7 @@ with aba_view[pluv_index]:
 # --- FOOTER PROFISSIONAL ---
 # --- FOOTER PROFISSIONAL ---
 st.markdown(f"""
-    <div class='footer'>
+    <div style='display:none;'>
         <b>Hélio Silvestre dos Santos</b> - Analista de Dados e Business Intelligence
         <br>
         <a href='https://github.com/santoshelios' target='_blank'>📁 GitHub</a>
@@ -1089,3 +1024,34 @@ if "🌧️ Histórico Chuva" in tabs_list:
             st.plotly_chart(fig, use_container_width=True)
 
           
+
+
+st.sidebar.markdown("""
+<div class='sidebar-footer'>
+<b>GRUPO SANTIN</b><br>
+Sistema Corporativo de Controle de Obras<br>
+Business Intelligence • Engenharia • Gestão de Projetos
+</div>
+""", unsafe_allow_html=True)
+
+
+st.sidebar.markdown("---")
+st.sidebar.info("Sistema de Gestão de Obras v2.0")
+
+# --- FOOTER PROFISSIONAL ---
+st.markdown("""
+<div style="
+    text-align:center;
+    margin-top:50px;
+    font-size:14px;
+    color:#111827;
+    line-height:1.6;
+">
+    <b>Hélio Silvestre dos Santos</b> - Analista de Dados e Business Intelligence
+    <br>
+    <a href='https://github.com/santoshelios' target='_blank'>📁 GitHub</a> |
+    <a href='https://www.linkedin.com/in/heliossantos' target='_blank'>💼 LinkedIn</a> |
+    <a href='https://wa.me/5534998375673' target='_blank'>💬 WhatsApp</a> |
+    <a href='https://app.xperiun.com//in/heliossantos' target='_blank'>🌐 Portfólio</a>
+</div>
+""", unsafe_allow_html=True) 
