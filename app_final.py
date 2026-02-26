@@ -22,6 +22,36 @@ st.set_page_config(
     layout="wide"
 )
 
+import base64
+
+def get_base64_logo(path):
+    with open(path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
+
+logo_base64 = get_base64_logo("logo_Santin.png")
+
+st.markdown(f"""
+<style>
+.logo-top-right {{
+    position: fixed;
+    top: 15px;
+    right: 25px;
+    z-index: 9999;
+}}
+.logo-top-right img {{
+    width: 110px;
+}}
+</style>
+
+<div class="logo-top-right">
+    <img src="data:image/png;base64,{logo_base64}">
+</div>
+""", unsafe_allow_html=True)
+
+
+
+
+
 # --- ESTILIZAÇÃO CUSTOMIZADA (Padrão Corporativo) ---
 
 st.markdown("""
@@ -247,8 +277,22 @@ with st.sidebar:
                 else:
                     st.error("Acesso negado")
     else:
-        st.markdown(f"<div style='text-align: center; padding: 10px; background: #f0f2f6; border-radius: 10px;'>Usuário Ativo:<br><b>{st.session_state.user_name}</b></div>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"""
+            <div style="
+                text-align:center;
+                padding:16px;
+                background:linear-gradient(135deg,#1E293B,#0F172A);
+                border-radius:12px;
+                border:1px solid #334155;
+                margin-bottom:12px;
+            ">
+                <div style="font-size:13px; color:#94A3B8;">Usuário Ativo</div>
+                <div style="font-size:18px; font-weight:700; color:#FFFFFF;">
+                    {st.session_state.user_name}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
         if st.button("SAIR DO SISTEMA"):
             st.session_state.logged_in = False
             st.session_state.user_name = "Visitante"
@@ -258,7 +302,31 @@ with st.sidebar:
     #st.info("Sistema de Gestão de Obras v2.0")
 
 # --- CORPO PRINCIPAL ---
-st.markdown("<h1 class='header-style'>🏗️ GRUPO SANTIN - Controle de Obras</h1>", unsafe_allow_html=True)
+
+st.markdown(f"""
+<style>
+.header-container {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+}}
+
+.header-title {{
+    color: #111827;
+    font-weight: 800;
+    font-size: 30px;
+}}
+</style>
+
+<div class="header-container">
+    <div class="header-title">
+        🏗️ GRUPO SANTIN - Controle de Obras
+    </div>
+    <img src="data:image/png;base64,{logo_base64}" width="120">
+</div>
+""", unsafe_allow_html=True)
+
 
 # Definição das Abas (ORDEM CORRETA)
 if st.session_state.logged_in:
