@@ -115,17 +115,34 @@ def get_logs():
 # --- FUNÇÕES DE FUNCIONÁRIOS ---
 def add_funcionario(mat, nome, func, abrev, adm, mo, status, usuario_log="Sistema"):
     conn = get_connection()
-    if not conn: return False, "Sem conexão"
+    if not conn:
+        return False, "Sem conexão"
+
     try:
         c = conn.cursor()
+
+        # 🔒 Verificação explícita de duplicidade
+        c.execute("SELECT 1 FROM funcionarios WHERE matricula=%s", (str(mat),))
+        if c.fetchone():
+            conn.close()
+            return False, "Matrícula já cadastrada no sistema."
+
         d_adm = adm.strftime('%Y-%m-%d') if isinstance(adm, (date, datetime)) else adm
-        c.execute("INSERT INTO funcionarios (matricula, nome, funcao, abrev, admissao, mo, status) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (matricula) DO UPDATE SET nome=EXCLUDED.nome, funcao=EXCLUDED.funcao, abrev=EXCLUDED.abrev, admissao=EXCLUDED.admissao, mo=EXCLUDED.mo, status=EXCLUDED.status", 
-                 (str(mat), nome, func, abrev, d_adm, mo, status))
+
+        c.execute(
+            "INSERT INTO funcionarios (matricula, nome, funcao, abrev, admissao, mo, status) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (str(mat), nome, func, abrev, d_adm, mo, status)
+        )
+
         conn.commit()
         conn.close()
-        registrar_log(usuario_log, "INSERIR/ATUALIZAR", "funcionarios", f"Mat: {mat}, Nome: {nome}")
+
+        registrar_log(usuario_log, "INSERIR", "funcionarios", f"Mat: {mat}, Nome: {nome}")
         return True, ""
+
     except Exception as e:
+        if conn:
+            conn.close()
         return False, str(e)
 
 def get_funcionarios():
@@ -201,6 +218,33 @@ def add_apontamento(mat, nome, func, equip, ativ, ent, s_a, r_a, s_f,
                     total, horas_normais, horas_extra, data, usuario_log="Sistema"):
     conn = get_connection()
     if not conn:
+        return False
+    try:
+        c = conn.cursor()
+        d_ap = data.strftime('%Y-%m-%d') if isinstance(data, (date, datetime)) else data
+
+        c.execute("""
+            INSERT INTO apontamentos 
+            (matricula, nome, funcao, equipamento, atividade,
+             entrada, saida_alm, retorno_alm, saida_fin, total,
+             horas_normais, horas_extra, data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            str(mat), nome, func, equip, ativ,
+            str(ent), str(s_a), str(r_a), str(s_f), total,
+            horas_normais, horas_extra, d_ap
+        ))
+
+        conn.commit()
+        conn.close()
+
+        registrar_log(usuario_log, "APONTAMENTO", "apontamentos",
+                      f"Mat: {mat}, Data: {d_ap}, Total: {total}, Extra: {horas_extra}")
+        return True
+
+    except Exception:
+        if conn:
+            conn.close()
         return False
     try:
         c = conn.cursor()
