@@ -257,8 +257,8 @@ with st.sidebar:
     st.markdown("<h2 style='text-align: center;'>🔐 ACESSO</h2>", unsafe_allow_html=True)
     
     if not st.session_state.logged_in:
-        user = st.text_input("Usuário", placeholder="Digite seu usuário")
-        password = st.text_input("Senha", type="password", placeholder="Digite sua senha")
+        user = st.text_input("Usuário", placeholder="Digite seu usuário",autocomplete='off')
+        password = st.text_input("Senha", type="password", placeholder="Digite sua senha",autocomplete='new-password')
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("ENTRAR NO SISTEMA"):
             try:
