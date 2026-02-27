@@ -171,10 +171,60 @@ def delete_funcionario(mat, usuario_log="Sistema"):
         return True
     except: return False
 
-# --- FUNÇÕES DE APONTAMENTOS ---
-def add_apontamento(mat, nome, func, equip, ativ, ent, s_a, r_a, s_f, total, data, usuario_log="Sistema"):
+
+def get_carga_dia(data_ref):
     conn = get_connection()
-    if not conn: return False
+    if not conn:
+        return 0
+    try:
+        c = conn.cursor()
+
+        c.execute("SELECT 1 FROM feriados WHERE data=%s", (data_ref,))
+        if c.fetchone():
+            conn.close()
+            return 0
+
+        dia_semana = datetime.strptime(str(data_ref), "%Y-%m-%d").weekday()
+
+        c.execute("SELECT carga_horas FROM jornada_padrao WHERE dia_semana=%s", (dia_semana,))
+        result = c.fetchone()
+        conn.close()
+
+        if result:
+            return float(result[0])
+        return 0
+    except:
+        return 0
+
+# --- FUNÇÕES DE APONTAMENTOS ---
+def add_apontamento(mat, nome, func, equip, ativ, ent, s_a, r_a, s_f,
+                    total, horas_normais, horas_extra, data, usuario_log="Sistema"):
+    conn = get_connection()
+    if not conn:
+        return False
+    try:
+        c = conn.cursor()
+        d_ap = data.strftime('%Y-%m-%d') if isinstance(data, (date, datetime)) else data
+
+        c.execute("""
+            INSERT INTO apontamentos 
+            (matricula, nome, funcao, equipamento, atividade,
+             entrada, saida_alm, retorno_alm, saida_fin, total,
+             horas_normais, horas_extra, data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            str(mat), nome, func, equip, ativ,
+            str(ent), str(s_a), str(r_a), str(s_f), total,
+            horas_normais, horas_extra, d_ap
+        ))
+
+        conn.commit()
+        conn.close()
+        registrar_log(usuario_log, "APONTAMENTO", "apontamentos",
+                      f"Mat: {mat}, Data: {d_ap}, Total: {total}, Extra: {horas_extra}")
+        return True
+    except:
+        return False
     try:
         c = conn.cursor()
         d_ap = data.strftime('%Y-%m-%d') if isinstance(data, (date, datetime)) else data

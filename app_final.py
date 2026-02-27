@@ -160,15 +160,24 @@ def calcular_horas(e, s_a, r_a, s_f):
         t2 = datetime.strptime(str(s_a), fmt)
         t3 = datetime.strptime(str(r_a), fmt)
         t4 = datetime.strptime(str(s_f), fmt)
-        p1 = t2 - t1
-        p2 = t4 - t3
-        total = p1 + p2
+
+        # 🔹 Se não houve intervalo (sem almoço real)
+        if t3 == t2 or t3 == t4:
+            total = t4 - t1
+        else:
+            p1 = t2 - t1
+            p2 = t4 - t3
+            total = p1 + p2
+
         total_segundos = total.total_seconds()
         horas = int(total_segundos // 3600)
         minutos = int((total_segundos % 3600) // 60)
+
         return f"{horas:02d}:{minutos:02d}"
+
     except:
         return "00:00"
+
 
 def horas_para_decimal(h_m):
     try:
@@ -537,11 +546,114 @@ if st.session_state.logged_in:
                 s_fin = st.time_input("Fim Jornada", value=datetime.strptime("17:00", "%H:%M").time())
                 total_h = calcular_horas(ent, s_alm, r_alm, s_fin)
                 st.info(f"Horas Trabalhadas: **{total_h}**")
+            extra_100 = st.checkbox("Considerar 100% Hora Extra")
             if st.form_submit_button("REGISTRAR EM OBRA"):
                 if sel_mat and equip and ativ:
-                    db.add_apontamento(sel_mat, nome_auto, funcao_auto, equip, ativ, ent, s_alm, r_alm, s_fin, total_h, data_ap, st.session_state.user_name)
-                    st.success("Registrado!"); reset_form(); time.sleep(1); st.rerun()
-                else: st.warning("Preencha os campos obrigatórios.")
+
+                    # 🔒 VALIDAÇÃO TEMPORAL RÍGIDA
+                    fmt = '%H:%M:%S'
+                    t1 = datetime.strptime(str(ent), fmt)
+                    t2 = datetime.strptime(str(s_alm), fmt)
+                    t3 = datetime.strptime(str(r_alm), fmt)
+                    t4 = datetime.strptime(str(s_fin), fmt)
+
+                    if not (t1 < t4):
+                        st.error("⚠️ A entrada deve ser menor que o fim da jornada.")
+                        st.stop()
+
+                    if t2 < t1:
+                        st.error("⚠️ Saída para intervalo não pode ser menor que a entrada.")
+                        st.stop()
+
+                    if t3 < t2:
+                        st.error("⚠️ Retorno não pode ser menor que a saída para intervalo.")
+                        st.stop()
+
+                    if t4 < t3:
+                        st.error("⚠️ Fim da jornada não pode ser menor que o retorno.")
+                        st.stop()
+
+                    # 🔎 Buscar apontamentos já existentes
+                    aponts_existentes = db.get_apontamentos()
+
+                    aponts_mesmo_dia = [
+                        a for a in aponts_existentes
+                        if str(a[0]) == str(sel_mat)
+                        and str(a[10]) == str(data_ap)
+                    ]
+
+                    def to_dt(hora):
+                        return datetime.strptime(str(hora), "%H:%M:%S")
+
+                    novo_intervalos = [
+                        (to_dt(ent), to_dt(s_alm)),
+                        (to_dt(r_alm), to_dt(s_fin))
+                    ]
+
+                    sobreposicao = False
+
+                    for ap in aponts_mesmo_dia:
+                        ent_exist = to_dt(ap[5])
+                        s_alm_exist = to_dt(ap[6])
+                        r_alm_exist = to_dt(ap[7])
+                        s_fin_exist = to_dt(ap[8])
+
+                        intervalos_existentes = [
+                            (ent_exist, s_alm_exist),
+                            (r_alm_exist, s_fin_exist)
+                        ]
+
+                        for n_inicio, n_fim in novo_intervalos:
+                            for e_inicio, e_fim in intervalos_existentes:
+                                if n_inicio < e_fim and n_fim > e_inicio:
+                                    sobreposicao = True
+                                    break
+                            if sobreposicao:
+                                 st.error("⚠️ Já existe apontamento neste intervalo de horário para este colaborador nesta data.")
+                    else:
+
+                        # 🔹 Cálculo de horas normais e extras
+                        horas = int(total_h.split(":")[0])
+                        minutos = int(total_h.split(":")[1])
+                        total_float = horas + minutos / 60
+
+                        carga_dia = db.get_carga_dia(data_ap)
+
+                        if extra_100:
+                            horas_normais = 0
+                            horas_extra = total_float
+                        else:
+                            if carga_dia == 0:
+                                horas_normais = 0
+                                horas_extra = total_float
+                            else:
+                                horas_extra = max(0, total_float - carga_dia)
+                                horas_normais = total_float - horas_extra
+
+                        db.add_apontamento(
+                            sel_mat,
+                            nome_auto,
+                            funcao_auto,
+                            equip,
+                            ativ,
+                            ent,
+                            s_alm,
+                            r_alm,
+                            s_fin,
+                            total_h,
+                            horas_normais,
+                            horas_extra,
+                            data_ap,
+                            st.session_state.user_name
+                        )
+
+                        st.success("Registrado!")
+                        reset_form()
+                        time.sleep(1)
+                        st.rerun()
+
+                else:
+                    st.warning("Preencha os campos obrigatórios.")
 else:
     with aba_view[2]:
         st.subheader("📈 Dashboard de Produtividade")
