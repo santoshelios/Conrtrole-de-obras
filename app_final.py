@@ -197,8 +197,6 @@ def converter_df_para_excel(df):
 
 # --- PLUVIOMETRIA CEMADEN + INMET ---
 
-
-
 def get_pluviometria_cruzada(data_ref):
     try:
         latitude = -23.505
@@ -471,11 +469,11 @@ if st.session_state.logged_in:
         with st.form(key=f"form_novo_colab_{st.session_state.form_key}"):
             c1, c2 = st.columns(2)
             with c1:
-                mat = st.text_input("Matrícula *")
-                nome = st.text_input("Nome Completo *")
+                mat = st.text_input("Matrícula *",autocomplete="off")
+                nome = st.text_input("Nome Completo *",autocomplete="off")
                 func = st.selectbox("Função/Cargo *", funcoes_disponiveis)
             with c2:
-                abrev = st.text_input("Abreviação")
+                abrev = st.text_input("Abreviação",autocomplete="off")
                 adm = st.date_input("Data de Admissão")
                 mo = st.selectbox("Tipo de MO", ["MOD", "MOI"])
                 status = st.selectbox("Status", ["Ativo", "Inativo"])
