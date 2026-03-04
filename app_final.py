@@ -395,30 +395,68 @@ with aba_view[0]:
             df_full = df_full.merge(df_hist_count, on='Data', how='left').fillna(0)
             df_full['Quantidade'] = df_full['Quantidade'].astype(int)
 
+            
+            # --- Gráfico Executivo de Evolução do Efetivo ---
+
+            
+            # --- Gráfico Executivo Ajustado ---
+
             fig_hist = px.line(
                 df_full,
                 x='Data',
                 y='Quantidade',
                 title="Evolução do Efetivo Presente",
                 markers=True,
-                line_shape='linear',
-                text='Quantidade'
+                line_shape='spline'
             )
 
+            # Linha suavizada mais fina
             fig_hist.update_traces(
-                marker=dict(size=7, color='black'),
-                line=dict(width=3),
-                textposition="top center"
+                line=dict(width=2.5, color="#2563EB"),
+                marker=dict(size=5, color="#1E3A8A")
+            )
+
+            ultimo_valor = df_full['Quantidade'].iloc[-1]
+            ultima_data = df_full['Data'].iloc[-1]
+
+            # Destacar último ponto
+            fig_hist.add_scatter(
+                x=[ultima_data],
+                y=[ultimo_valor],
+                mode="markers+text",
+                text=[ultimo_valor],
+                textposition="bottom center",
+                textfont=dict(size=14, color="black"),
+                marker=dict(size=10, color="black"),
+                showlegend=False
+            )
+
+            # Label executivo sem caixa
+            fig_hist.add_annotation(
+                x=ultima_data,
+                y=ultimo_valor,
+                text=f"Efetivo Atual: {ultimo_valor} colaboradores",
+                showarrow=False,
+                yshift=35,
+                font=dict(size=13, color="#1E3A8A")
             )
 
             fig_hist.update_layout(
                 template="plotly_white",
-                xaxis=dict(tickformat="%d/%m/%Y"),
                 hovermode="x unified",
-                yaxis=dict(range=[0, df_full['Quantidade'].max() + 2])
+                xaxis=dict(
+                    tickformat="%d/%m/%Y"
+                ),
+                yaxis=dict(
+                    title="Quantidade",
+                    range=[max(0, df_full['Quantidade'].min() - 2), df_full['Quantidade'].max() + 4]
+                ),
+                margin=dict(l=20, r=20, t=60, b=20)
             )
 
             st.plotly_chart(fig_hist, width='stretch')
+
+
         
         st.markdown("---")
         st.markdown("### 📋 Status do Dia")
@@ -733,13 +771,13 @@ else:
             col_f1, col_f2, col_f3 = st.columns(3)
 
             with col_f1:
-                filtro_nome = st.text_input("Buscar por Nome")
+                filtro_nome = st.text_input("Buscar por Nome",autocomplete="off")
 
             with col_f2:
-                filtro_matricula = st.text_input("Buscar por Matrícula")
+                filtro_matricula = st.text_input("Buscar por Matrícula",autocomplete="off")
 
             with col_f3:
-                filtro_funcao = st.text_input("Buscar por Função")
+                filtro_funcao = st.text_input("Buscar por Função",autocomplete="off")
 
             df_filtrado = df.copy()
 
@@ -804,6 +842,7 @@ else:
 
 # --- ABAS EXCLUSIVAS DE GESTÃO (LOGADO) ---
 if st.session_state.logged_in:
+
     # CONSULTA GERAL
     with aba_view[5]:
         st.subheader("📖 Consulta de Efetivo")
@@ -837,13 +876,13 @@ if st.session_state.logged_in:
             col_f1, col_f2, col_f3 = st.columns(3)
 
             with col_f1:
-                filtro_nome = st.text_input("Buscar por Nome")
+                filtro_nome = st.text_input("Buscar por Nome",autocomplete="off")
 
             with col_f2:
-                filtro_matricula = st.text_input("Buscar por Matrícula")
+                filtro_matricula = st.text_input("Buscar por Matrícula",autocomplete="off")
 
             with col_f3:
-                filtro_funcao = st.text_input("Buscar por Função")
+                filtro_funcao = st.text_input("Buscar por Função",autocomplete="off")
 
             df_filtrado = df.copy()
 
@@ -1015,7 +1054,7 @@ def render_pluviometria():
 
     if st.session_state.get("user_name") == admin_user:
         st.markdown("---")
-        if st.button("💾 Salvar Pluviometria no Banco"):
+        if st.button("💾 Salvar Pluviometria"):
             sucesso = db.add_pluviometria(
                 data_ref,
                 horas,
