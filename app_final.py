@@ -569,6 +569,7 @@ if st.session_state.logged_in:
                 func_info = next((f for f in dados_func if f[0] == sel_mat), None)
                 nome_auto = func_info[1] if func_info else ""
                 funcao_auto = func_info[2] if func_info else ""
+                status_colab = func_info[6] if func_info and len(func_info) > 6 else None
                 st.text_input("Nome", value=nome_auto, disabled=True)
                 st.text_input("Função", value=funcao_auto, disabled=True)
                 data_ap = st.date_input("Data do Apontamento", value=get_now_br().date())
@@ -585,6 +586,11 @@ if st.session_state.logged_in:
             extra_100 = st.checkbox("Considerar 100% Hora Extra")
             if st.form_submit_button("REGISTRAR EM OBRA"):
                 if sel_mat and equip and ativ:
+
+                    # 🚫 BLOQUEIO PARA COLABORADOR INATIVO
+                    if status_colab and str(status_colab).lower() == "inativo":
+                        st.error("❌ Este colaborador está INATIVO e não pode receber apontamentos.")
+                        st.stop()
 
                     # 🔒 VALIDAÇÃO TEMPORAL RÍGIDA
                     fmt = '%H:%M:%S'
