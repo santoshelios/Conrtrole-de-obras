@@ -343,6 +343,13 @@ else:
 
 aba_view = st.tabs(tabs_list)
 
+
+import corporativo_layer as corp
+
+conn = db.get_connection()
+corp.criar_snapshot_efetivo(conn, st.session_state.user_name)
+
+
 # --- ABA 0: EFETIVO DIÁRIO ---
 with aba_view[0]:
     st.subheader("📅 Controle de Efetivo Diário")
