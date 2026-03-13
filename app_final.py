@@ -358,6 +358,12 @@ with aba_view[0]:
         with st.expander("📤 Upload de Efetivo (Excel - Aba 'Efetivo')"):
             u_file = st.file_uploader("Selecione o arquivo Excel", type=['xlsx'])
             if u_file and st.button("Processar Arquivo"):
+                import corporativo_layer as corp
+                conn = db.get_connection()
+
+                corp.criar_snapshot_efetivo(conn, st.session_state.user_name)
+
+                #df_u = pd.read_excel(u_file, sheet_name='Efetivo')
                 try:
                     df_u = pd.read_excel(u_file, sheet_name='Efetivo')
                     cols_required = ['Data', 'Matricula', 'Nome', 'Funcao', 'Status', 'Situacao']
@@ -375,6 +381,7 @@ with aba_view[0]:
 
     dados_efetivo = db.get_efetivo_diario()
     if dados_efetivo and len(dados_efetivo) > 0:
+
         # Colunas do Supabase: data, matricula, nome, funcao, status_val, situacao
         df_ef = pd.DataFrame(dados_efetivo, columns=["Data", "Matricula", "Nome", "Funcao", "Status_Val", "Situacao"])
         df_ef['Data'] = pd.to_datetime(df_ef['Data']).dt.date
@@ -1086,20 +1093,90 @@ def render_pluviometria():
     with col2:
         st.metric("📅 Acumulado no Mês (mm)", f"{acumulado_mes:.2f}")
 
-    for periodo, horas_lista in {
-        "Manhã":[6,7,8,9,10,11],
-        "Tarde":[12,13,14,15,16,17],
-        "Noite":[18,19,20,21,22,23],
-        "Madrugada":[0,1,2,3,4,5]
-    }.items():
+    periodos = {
+        "🌅 Manhã":[6,7,8,9,10,11],
+        "☀️ Tarde":[12,13,14,15,16,17],
+        "🌙 Noite":[18,19,20,21,22,23],
+        "🌑 Madrugada":[0,1,2,3,4,5]
+    }
 
-        st.markdown(f"### {periodo}")
+    for periodo, horas_lista in periodos.items():
+
+        total_periodo = sum([horas[h] for h in horas_lista])
+
+        st.markdown(
+            f"""
+            <div style="
+                margin-top:25px;
+                margin-bottom:8px;
+                font-size:20px;
+                font-weight:700;
+                color:#111827;
+            ">
+            {periodo} &nbsp;&nbsp;
+            <span style='font-size:14px;font-weight:500;color:#6B7280'>
+            Total: {total_periodo:.2f} mm
+            </span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
         cols = st.columns(6)
+
         for i, h in enumerate(horas_lista):
+
+            valor = horas[h]
+
+            if valor == 0:
+                cor = "#F3F4F6"
+                texto = "#111827"
+                altura = 32
+
+            elif valor <= 0.5:
+                cor = "#BFDBFE"
+                texto = "#111827"
+                altura = 36
+
+            elif valor <= 2:
+                cor = "#60A5FA"
+                texto = "white"
+                altura = 40
+
+            elif valor <= 5:
+                cor = "#2563EB"
+                texto = "white"
+                altura = 46
+
+            else:
+                cor = "#7C3AED"
+                texto = "white"
+                altura = 54
+
             with cols[i]:
-                st.markdown(f"**{h}h**")
+
                 st.markdown(
-                    f"<div style='background:#FFD700;padding:8px;border-radius:8px;text-align:center;font-weight:700;color:#000'>{horas[h]:.2f} mm</div>",
+                    f"<div style='font-size:12px;color:#6B7280;margin-bottom:4px'>{h}h</div>",
+                    unsafe_allow_html=True
+                )
+
+                st.markdown(
+                    f"""
+                    <div style="
+                        background:{cor};
+                        height:{altura}px;
+                        border-radius:10px;
+                        display:flex;
+                        align-items:center;
+                        justify-content:center;
+                        font-weight:700;
+                        color:{texto};
+                        box-shadow:0 3px 8px rgba(0,0,0,0.12);
+                        transition:0.25s;
+                    ">
+                        {valor:.2f} mm
+                    </div>
+                    """,
                     unsafe_allow_html=True
                 )
 
