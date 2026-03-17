@@ -1,541 +1,301 @@
 import psycopg2
-from psycopg2 import extras
-import streamlit as st
-from datetime import datetime, date
 import pandas as pd
+from datetime import datetime, timedelta, time
 
-# --- CONFIGURAÇÃO DE CONEXÃO (SUPABASE) ---
+# =========================
+# CONEXÃO SUPABASE (POSTGRESQL)
+# =========================
+
+DB_URL = "postgresql://postgres.pzqutgzekgffqlwkmsst:MvjDgb3oWeC1n5n@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+
 def get_connection():
-    """Conexão robusta com o Supabase usando a URL de conexão do pooler correta."""
-    # 1. Tenta segredos do Streamlit (Prioridade para Deploy)
     try:
-        if "database" in st.secrets:
-            return psycopg2.connect(st.secrets["database"]["url"])
-    except:
-        pass
-        
-    # 2. Configurações do Projeto (Atualizadas para a região correta: us-east-2)
-    project_id = "pzqutgzekgffqlwkmsst"
-    password = "Hss90352806amora"
-    # O host correto conforme identificado pelo usuário
-    host_pooler = "aws-1-us-east-2.pooler.supabase.com"
-    
-    # Tentativa via Pooler (Porta 6543)
-    # O formato do usuário DEVE ser: postgres.[ID_DO_PROJETO]
-    try:
-        url_pooler = f"postgresql://postgres.{project_id}:{password}@{host_pooler}:6543/postgres"
-        return psycopg2.connect(url_pooler, connect_timeout=10)
+        conn = psycopg2.connect(DB_URL)
+        return conn
     except Exception as e:
-        st.error(f"Erro de conexão com o banco de dados (Supabase): {e}")
+        print("Erro conexão:", e)
         return None
 
-def init_db():
-    """Garante que as tabelas existam e o RLS esteja desativado."""
-    conn = get_connection()
-    if not conn: return
-    try:
-        conn.autocommit = True
-        c = conn.cursor()
-        
-        # Tabelas principais
-        c.execute('''CREATE TABLE IF NOT EXISTS funcionarios (
-                        matricula TEXT PRIMARY KEY, nome TEXT, funcao TEXT, abrev TEXT,
-                        admissao DATE, mo TEXT, status TEXT)''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS apontamentos (
-                        id SERIAL PRIMARY KEY, matricula TEXT, nome TEXT, funcao TEXT,
-                        equipamento TEXT, atividade TEXT, entrada TEXT, saida_alm TEXT,
-                        retorno_alm TEXT, saida_fin TEXT, total TEXT, data DATE)''')
-        
-        c.execute('CREATE TABLE IF NOT EXISTS funcoes (nome TEXT PRIMARY KEY)')
-        c.execute('CREATE TABLE IF NOT EXISTS equipamentos (nome TEXT PRIMARY KEY)')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS efetivo_diario (
-                        id SERIAL PRIMARY KEY, data DATE, matricula TEXT, nome TEXT,
-                        funcao TEXT, status_val INTEGER, situacao TEXT)''')
-        
-        c.execute('CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT)')
-        
-        
-        # TABELA PLUVIOMETRIA
-        c.execute('''CREATE TABLE IF NOT EXISTS pluviometria (
-                        id SERIAL PRIMARY KEY,
-                        data DATE NOT NULL,
-                        hora INTEGER NOT NULL,
-                        chuva_mm NUMERIC(6,2) NOT NULL,
-                        origem TEXT DEFAULT 'OPEN-METEO',
-                        usuario TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+# =========================
+# QUERY PADRÃO
+# =========================
 
-        # TABELA DE LOGS (RASTREABILIDADE)
-        c.execute('''CREATE TABLE IF NOT EXISTS logs_auditoria (
-                        id SERIAL PRIMARY KEY, 
-                        data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        usuario TEXT,
-                        acao TEXT,
-                        tabela TEXT,
-                        detalhes TEXT)''')
-        
-        # Desativa RLS para facilitar o acesso via código
-        for t in ['funcionarios', 'apontamentos', 'funcoes', 'equipamentos', 'efetivo_diario', 'usuarios', 'logs_auditoria', 'pluviometria']:
-            try: c.execute(f"ALTER TABLE {t} DISABLE ROW LEVEL SECURITY;")
-            except: pass
-            
-        c.execute("INSERT INTO usuarios (username, password) VALUES ('admin', '1234') ON CONFLICT DO NOTHING")
-        conn.close()
+def run_query(sql, params=None):
+    conn = get_connection()
+    if not conn:
+        return pd.DataFrame()
+    try:
+        df = pd.read_sql(sql, conn, params=params)
+        return df
     except Exception as e:
-        print(f"Erro init_db: {e}")
+        print("ERRO QUERY:", e)
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
-# --- FUNÇÃO DE LOGGING ---
-def registrar_log(usuario, acao, tabela, detalhes):
-    """Registra uma ação no log de auditoria."""
+def execute_non_query(sql, params=None, action="", table="", user=""):
     conn = get_connection()
-    if not conn: return
+    if not conn:
+        return False, "Erro de conexão"
     try:
-        c = conn.cursor()
-        c.execute("INSERT INTO logs_auditoria (usuario, acao, tabela, detalhes) VALUES (%s, %s, %s, %s)",
-                 (usuario, acao, tabela, detalhes))
+        cur = conn.cursor()
+        cur.execute(sql, params)
         conn.commit()
-        conn.close()
+        if action and table:
+            add_log(user, action, table, str(params))
+        return True, "Sucesso"
     except Exception as e:
-        print(f"Erro ao registrar log: {e}")
+        print(f"ERRO EXECUTE: {e}")
+        return False, str(e)
+    finally:
+        conn.close()
+
+# =========================
+# LOGS / AUDITORIA
+# =========================
+
+def add_log(usuario, acao, tabela, detalhes):
+    sql = "INSERT INTO logs_auditoria (usuario, acao, tabela, detalhes, data_hora) VALUES (%s, %s, %s, %s, %s)"
+    now = datetime.now()
+    execute_non_query(sql, (usuario, acao, tabela, detalhes, now))
 
 def get_logs():
-    """Retorna os logs de auditoria."""
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT data_hora, usuario, acao, tabela, detalhes FROM logs_auditoria ORDER BY data_hora DESC LIMIT 500")
-        data = c.fetchall()
-        conn.close()
-        return data
-    except: return []
+    return run_query("SELECT data_hora, usuario, acao, tabela, detalhes FROM logs_auditoria ORDER BY data_hora DESC LIMIT 500")
 
-# --- FUNÇÕES DE FUNCIONÁRIOS ---
-def add_funcionario(mat, nome, func, abrev, adm, mo, status, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn:
-        return False, "Sem conexão"
+# =========================
+# LOGIN E USUÁRIOS
+# =========================
 
-    try:
-        c = conn.cursor()
-
-        # 🔒 Verificação explícita de duplicidade
-        c.execute("SELECT 1 FROM funcionarios WHERE matricula=%s", (str(mat),))
-        if c.fetchone():
-            conn.close()
-            return False, "Matrícula já cadastrada no sistema."
-
-        d_adm = adm.strftime('%Y-%m-%d') if isinstance(adm, (date, datetime)) else adm
-
-        c.execute(
-            "INSERT INTO funcionarios (matricula, nome, funcao, abrev, admissao, mo, status) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(mat), nome, func, abrev, d_adm, mo, status)
-        )
-
-        conn.commit()
-        conn.close()
-
-        registrar_log(usuario_log, "INSERIR", "funcionarios", f"Mat: {mat}, Nome: {nome}")
-        return True, ""
-
-    except Exception as e:
-        if conn:
-            conn.close()
-        return False, str(e)
-
-def get_funcionarios():
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT matricula, nome, funcao, abrev, admissao, mo, status FROM funcionarios ORDER BY nome")
-        data = c.fetchall()
-        conn.close()
-        result = []
-        for r in data:
-            row = list(r)
-            if isinstance(row[4], (date, datetime)):
-                row[4] = row[4].strftime('%Y-%m-%d')
-            result.append(row)
-        return result
-    except: return []
-
-def update_funcionario(mat, nome, func, abrev, adm, mo, status, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        d_adm = adm.strftime('%Y-%m-%d') if isinstance(adm, (date, datetime)) else adm
-        c.execute("UPDATE funcionarios SET nome=%s, funcao=%s, abrev=%s, admissao=%s, mo=%s, status=%s WHERE matricula=%s",
-                 (nome, func, abrev, d_adm, mo, status, str(mat)))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "ATUALIZAR", "funcionarios", f"Mat: {mat}, Novo Nome: {nome}")
-        return True
-    except: return False
-
-def delete_funcionario(mat, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("DELETE FROM funcionarios WHERE matricula=%s", (str(mat),))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "EXCLUIR", "funcionarios", f"Mat: {mat}")
-        return True
-    except: return False
-
-
-def get_carga_dia(data_ref):
-    conn = get_connection()
-    if not conn:
-        return 0
-    try:
-        c = conn.cursor()
-
-        c.execute("SELECT 1 FROM feriados WHERE data=%s", (data_ref,))
-        if c.fetchone():
-            conn.close()
-            return 0
-
-        dia_semana = datetime.strptime(str(data_ref), "%Y-%m-%d").weekday()
-
-        c.execute("SELECT carga_horas FROM jornada_padrao WHERE dia_semana=%s", (dia_semana,))
-        result = c.fetchone()
-        conn.close()
-
-        if result:
-            return float(result[0])
-        return 0
-    except:
-        return 0
-
-# --- FUNÇÕES DE APONTAMENTOS ---
-def add_apontamento(mat, nome, func, equip, ativ, ent, s_a, r_a, s_f,
-                    total, horas_normais, horas_extra, data, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn:
-        return False
-    try:
-        c = conn.cursor()
-        d_ap = data.strftime('%Y-%m-%d') if isinstance(data, (date, datetime)) else data
-
-        c.execute("""
-            INSERT INTO apontamentos 
-            (matricula, nome, funcao, equipamento, atividade,
-             entrada, saida_alm, retorno_alm, saida_fin, total,
-             horas_normais, horas_extra, data)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            str(mat), nome, func, equip, ativ,
-            str(ent), str(s_a), str(r_a), str(s_f), total,
-            horas_normais, horas_extra, d_ap
-        ))
-
-        conn.commit()
-        conn.close()
-
-        registrar_log(usuario_log, "APONTAMENTO", "apontamentos",
-                      f"Mat: {mat}, Data: {d_ap}, Total: {total}, Extra: {horas_extra}")
-        return True
-
-    except Exception:
-        if conn:
-            conn.close()
-        return False
-    try:
-        c = conn.cursor()
-        d_ap = data.strftime('%Y-%m-%d') if isinstance(data, (date, datetime)) else data
-
-        c.execute("""
-            INSERT INTO apontamentos 
-            (matricula, nome, funcao, equipamento, atividade,
-             entrada, saida_alm, retorno_alm, saida_fin, total,
-             horas_normais, horas_extra, data)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            str(mat), nome, func, equip, ativ,
-            str(ent), str(s_a), str(r_a), str(s_f), total,
-            horas_normais, horas_extra, d_ap
-        ))
-
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "APONTAMENTO", "apontamentos",
-                      f"Mat: {mat}, Data: {d_ap}, Total: {total}, Extra: {horas_extra}")
-        return True
-    except:
-        return False
-    try:
-        c = conn.cursor()
-        d_ap = data.strftime('%Y-%m-%d') if isinstance(data, (date, datetime)) else data
-        c.execute("INSERT INTO apontamentos (matricula, nome, funcao, equipamento, atividade, entrada, saida_alm, retorno_alm, saida_fin, total, data) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                 (str(mat), nome, func, equip, ativ, str(ent), str(s_a), str(r_a), str(s_f), total, d_ap))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "APONTAMENTO", "apontamentos", f"Mat: {mat}, Data: {d_ap}, Total: {total}")
-        return True
-    except: return False
-
-def get_apontamentos():
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT matricula, nome, funcao, equipamento, atividade, entrada, saida_alm, retorno_alm, saida_fin, total, data FROM apontamentos ORDER BY data DESC")
-        data = c.fetchall()
-        conn.close()
-        return [list(r) for r in data]
-    except: return []
-
-def get_apontamentos_com_id():
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT id, matricula, nome, funcao, equipamento, atividade, entrada, saida_alm, retorno_alm, saida_fin, total, data FROM apontamentos ORDER BY data DESC")
-        data = c.fetchall()
-        conn.close()
-        return [list(r) for r in data]
-    except: return []
-
-def delete_apontamento_por_id(id_ap, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("DELETE FROM apontamentos WHERE id=%s", (id_ap,))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "EXCLUIR APONTAMENTO", "apontamentos", f"ID: {id_ap}")
-        return True
-    except: return False
-
-# --- FUNÇÕES DE APOIO ---
-def get_funcoes():
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT nome FROM funcoes ORDER BY nome")
-        data = [r[0] for r in c.fetchall()]
-        conn.close()
-        return data
-    except: return []
-
-def add_funcao(nome, usuario_log="Sistema"):
-    if not nome: return False
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("INSERT INTO funcoes VALUES (%s) ON CONFLICT DO NOTHING", (nome.strip().upper(),))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "INSERIR", "funcoes", f"Nome: {nome}")
-        return True
-    except: return False
-
-def delete_funcao(nome, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("DELETE FROM funcoes WHERE nome=%s", (nome,))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "EXCLUIR", "funcoes", f"Nome: {nome}")
-        return True
-    except: return False
-
-def get_equipamentos():
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT nome FROM equipamentos ORDER BY nome")
-        data = [r[0] for r in c.fetchall()]
-        conn.close()
-        return data
-    except: return []
-
-def add_equipamento(nome, usuario_log="Sistema"):
-    if not nome: return False
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("INSERT INTO equipamentos VALUES (%s) ON CONFLICT DO NOTHING", (nome.strip().upper(),))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "INSERIR", "equipamentos", f"Nome: {nome}")
-        return True
-    except: return False
-
-def delete_equipamento(nome, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("DELETE FROM equipamentos WHERE nome=%s", (nome,))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "EXCLUIR", "equipamentos", f"Nome: {nome}")
-        return True
-    except: return False
-
-# --- EFETIVO DIÁRIO ---
-def add_efetivo_diario_batch(df, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        for _, row in df.iterrows():
-            d_ef = row['Data'].strftime('%Y-%m-%d') if isinstance(row['Data'], (date, datetime, pd.Timestamp)) else row['Data']
-            c.execute("INSERT INTO efetivo_diario (data, matricula, nome, funcao, status_val, situacao) VALUES (%s, %s, %s, %s, %s, %s)",
-                     (d_ef, str(row['Matricula']), row['Nome'], row['Funcao'], int(row['Status']), row['Situacao']))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "UPLOAD BATCH", "efetivo_diario", f"Qtd: {len(df)}")
-        return True
-    except: return False
-
-def get_efetivo_diario():
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT data, matricula, nome, funcao, status_val, situacao FROM efetivo_diario ORDER BY data DESC")
-        data = c.fetchall()
-        conn.close()
-        return [list(r) for r in data]
-    except: return []
-
-def delete_efetivo_por_data(data, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        d_del = data.strftime('%Y-%m-%d') if isinstance(data, (date, datetime)) else data
-        c.execute("DELETE FROM efetivo_diario WHERE data=%s", (d_del,))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "EXCLUIR POR DATA", "efetivo_diario", f"Data: {d_del}")
-        return True
-    except: return False
-
-# --- USUÁRIOS ---
-def add_usuario(user, pwd, usuario_log="Sistema"):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("INSERT INTO usuarios VALUES (%s, %s)", (user, pwd))
-        conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "CRIAR USUÁRIO", "usuarios", f"Novo: {user}")
-        return True
-    except: return False
-
-def check_login(user, pwd):
-    conn = get_connection()
-    if not conn: return False
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM usuarios WHERE username=%s AND password=%s", (user, pwd))
-        data = c.fetchone()
-        conn.close()
-        if data:
-            # Não registra log aqui para não poluir, apenas no script principal se desejar
-            return True
-        return False
-    except: return False
+def check_login(user, password):
+    sql = "SELECT * FROM usuarios WHERE username = %s AND password = %s"
+    df = run_query(sql, (user, password))
+    return not df.empty
 
 def get_usuarios():
-    conn = get_connection()
-    if not conn: return []
-    try:
-        c = conn.cursor()
-        c.execute("SELECT username FROM usuarios")
-        data = [r[0] for r in c.fetchall()]
-        conn.close()
-        return data
-    except: return []
+    df = run_query("SELECT username FROM usuarios ORDER BY username")
+    return df['username'].tolist() if not df.empty else []
 
-def delete_usuario(user, usuario_log="Sistema"):
-    if user == 'admin': return False
+def add_usuario(user, pwd, usuario_admin):
+    sql = "INSERT INTO usuarios (username, password) VALUES (%s, %s)"
+    return execute_non_query(sql, (user, pwd), "INSERT", "usuarios", usuario_admin)
+
+def delete_usuario(user, usuario_admin):
+    sql = "DELETE FROM usuarios WHERE username=%s"
+    return execute_non_query(sql, (user,), "DELETE", "usuarios", usuario_admin)
+
+# =========================
+# FUNCIONÁRIOS
+# =========================
+
+def get_funcionario_por_matricula(mat):
+    sql = "SELECT matricula, nome, status, funcao FROM funcionarios WHERE matricula = %s"
+    df = run_query(sql, (mat,))
+    if not df.empty:
+        return df.iloc[0].to_dict()
+    return None
+
+def get_funcionarios():
+    return run_query("SELECT matricula, nome, funcao, abrev, admissao, mo, status FROM funcionarios ORDER BY nome")
+
+def add_funcionario(mat, nome, func, abrev, adm, mo, status, usuario):
+    sql = "INSERT INTO funcionarios (matricula, nome, funcao, abrev, admissao, mo, status) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+    return execute_non_query(sql, (mat, nome, func, abrev, adm, mo, status), "INSERT", "funcionarios", usuario)
+
+def update_funcionario(mat, nome, func, abrev, adm, mo, status, usuario):
+    sql = "UPDATE funcionarios SET nome=%s, funcao=%s, abrev=%s, admissao=%s, mo=%s, status=%s WHERE matricula=%s"
+    return execute_non_query(sql, (nome, func, abrev, adm, mo, status, mat), "UPDATE", "funcionarios", usuario)
+
+def delete_funcionario(mat, usuario):
+    sql = "DELETE FROM funcionarios WHERE matricula=%s"
+    return execute_non_query(sql, (mat,), "DELETE", "funcionarios", usuario)
+
+# =========================
+# FUNÇÕES E EQUIPAMENTOS
+# =========================
+
+def get_funcoes():
+    df = run_query("SELECT nome FROM funcoes ORDER BY nome")
+    return df['nome'].tolist() if not df.empty else []
+
+def add_funcao(nome, usuario):
+    sql = "INSERT INTO funcoes (nome) VALUES (%s)"
+    return execute_non_query(sql, (nome,), "INSERT", "funcoes", usuario)
+
+def delete_funcao(nome, usuario):
+    sql = "DELETE FROM funcoes WHERE nome=%s"
+    return execute_non_query(sql, (nome,), "DELETE", "funcoes", usuario)
+
+def get_equipamentos():
+    df = run_query("SELECT nome FROM equipamentos ORDER BY nome")
+    return df['nome'].tolist() if not df.empty else []
+
+def add_equipamento(nome, usuario):
+    sql = "INSERT INTO equipamentos (nome) VALUES (%s)"
+    return execute_non_query(sql, (nome,), "INSERT", "equipamentos", usuario)
+
+def delete_equipamento(nome, usuario):
+    sql = "DELETE FROM equipamentos WHERE nome=%s"
+    return execute_non_query(sql, (nome,), "DELETE", "equipamentos", usuario)
+
+# =========================
+# UTILITÁRIOS DE TEMPO E CÁLCULOS
+# =========================
+
+def str_to_time(t_str):
+    if not t_str or t_str == 'None': return None
+    if isinstance(t_str, time): return t_str
+    try:
+        t_str = str(t_str)
+        for fmt in ('%H:%M:%S', '%H:%M'):
+            try:
+                return datetime.strptime(t_str, fmt).time()
+            except ValueError:
+                continue
+        return None
+    except:
+        return None
+
+def diff_hours(t1, t2):
+    if not t1 or not t2: return 0.0
+    today = datetime.today()
+    dt1 = datetime.combine(today, t1)
+    dt2 = datetime.combine(today, t2)
+    if dt2 < dt1:
+        dt2 += timedelta(days=1)
+    diff = dt2 - dt1
+    return diff.total_seconds() / 3600.0
+
+def get_feriados_2026():
+    return ["2026-01-01", "2026-02-16", "2026-02-17", "2026-04-03", "2026-04-21", "2026-05-01", "2026-06-04", "2026-09-07", "2026-10-12", "2026-11-02", "2026-11-15", "2026-11-20", "2026-12-25"]
+
+def is_feriado_ou_fds(data):
+    if isinstance(data, str):
+        dt_obj = datetime.strptime(data, '%Y-%m-%d').date()
+        data_str = data
+    else:
+        dt_obj = data
+        data_str = data.strftime('%Y-%m-%d')
+    if dt_obj.weekday() >= 5: return True
+    if data_str in get_feriados_2026(): return True
+    return False
+
+def get_carga_dia(data):
+    if is_feriado_ou_fds(data): return 0
+    return 8.8
+
+# =========================
+# APONTAMENTOS
+# =========================
+
+def get_apontamentos():
+    return run_query("SELECT id, matricula, nome, funcao, equipamento, atividade, entrada, s_almoco, r_almoco, saida, total, data, status, horas_normais, horas_extra FROM apontamentos ORDER BY data DESC")
+
+def get_apontamentos_com_id():
+    return get_apontamentos()
+
+def check_sobreposicao(mat, data, ent, saida, id_ignore=None):
+    sql = "SELECT entrada, saida FROM apontamentos WHERE matricula = %s AND data = %s"
+    if id_ignore: sql += f" AND id != {id_ignore}"
+    df = run_query(sql, (mat, data))
+    if df.empty: return False
+    new_ent = str_to_time(ent)
+    new_sai = str_to_time(saida)
+    for _, row in df.iterrows():
+        ex_ent = str_to_time(row['entrada'])
+        ex_sai = str_to_time(row['saida'])
+        if not ex_ent or not ex_sai: continue
+        if new_ent < ex_sai and new_sai > ex_ent: return True
+    return False
+
+def add_apontamento(mat, nome, func_name, equip, ativ, ent, s_alm, r_alm, s_fin, total_h, h_norm, h_extra, data, usuario, considerar_100_extra=False):
+    func = get_funcionario_por_matricula(mat)
+    if not func: return False, "Colaborador não encontrado."
+    if str(func['status']).strip().lower() in ['inativo', 'desligado']:
+        return False, f"Erro: Colaborador {func['nome']} está INATIVO."
+    t_ent = str_to_time(ent)
+    t_s_alm = str_to_time(s_alm)
+    t_r_alm = str_to_time(r_alm)
+    t_sai = str_to_time(s_fin)
+    if t_r_alm and t_s_alm and t_r_alm < t_s_alm:
+        return False, "Erro: Retorno do Almoço menor que Saída."
+    if check_sobreposicao(mat, data, ent, s_fin):
+        return False, "Erro: Sobreposição de horários."
+    sql = """INSERT INTO apontamentos 
+             (matricula, nome, funcao, equipamento, atividade, entrada, s_almoco, r_almoco, saida, total, horas_normais, horas_extra, data, status) 
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+    params = (mat, func['nome'], func['funcao'], equip, ativ, str(ent), str(s_alm), str(r_alm), str(s_fin), total_h, h_norm, h_extra, data, 'Registrado')
+    return execute_non_query(sql, params, "INSERT", "apontamentos", usuario)
+
+def delete_apontamento_por_id(id_ap, usuario):
+    sql = "DELETE FROM apontamentos WHERE id=%s"
+    return execute_non_query(sql, (id_ap,), "DELETE", "apontamentos", usuario)
+
+# =========================
+# EFETIVO DIÁRIO
+# =========================
+
+def get_efetivo_diario():
+    return run_query("SELECT data as \"Data\", matricula as \"Matricula\", nome as \"Nome\", funcao as \"Funcao\", status_val as \"Status_Val\", situacao as \"Situacao\" FROM efetivo_diario ORDER BY data DESC")
+
+def add_efetivo_diario_batch(df, usuario):
     conn = get_connection()
     if not conn: return False
     try:
-        c = conn.cursor()
-        c.execute("DELETE FROM usuarios WHERE username=%s", (user,))
+        cur = conn.cursor()
+        # Preparar dados para inserção eficiente
+        data_to_insert = []
+        for _, row in df.iterrows():
+            data_val = row['Data']
+            if hasattr(data_val, 'to_pydatetime'): data_val = data_val.to_pydatetime().date()
+            elif hasattr(data_val, 'date'): data_val = data_val.date()
+            
+            data_to_insert.append((
+                data_val, 
+                str(row['Matricula']), 
+                str(row['Nome']), 
+                str(row['Funcao']), 
+                1, 
+                str(row['Situacao'])
+            ))
+        
+        # Inserção em massa (Batch)
+        from psycopg2.extras import execute_values
+        sql = "INSERT INTO efetivo_diario (data, matricula, nome, funcao, status_val, situacao) VALUES %s"
+        execute_values(cur, sql, data_to_insert)
+        
         conn.commit()
-        conn.close()
-        registrar_log(usuario_log, "EXCLUIR USUÁRIO", "usuarios", f"Removido: {user}")
+        add_log(usuario, "INSERT_BATCH", "efetivo_diario", f"Lote de {len(df)} registros")
         return True
-    except: return False
-
-# Inicialização automática
-init_db()
-
-
-# --- PLUVIOMETRIA ---
-
-
-def add_pluviometria(data_ref, horas_dict, usuario="Sistema"):
-    conn = get_connection()
-    if not conn:
-        return False
-    try:
-        c = conn.cursor()
-
-        # 🔥 Remove registros antigos da data
-        c.execute("DELETE FROM pluviometria WHERE data=%s", (data_ref,))
-
-        # 🔥 Insere as 24 horas completas com origem
-        for hora, valor in horas_dict.items():
-            c.execute(
-                """
-                INSERT INTO pluviometria (data, hora, chuva_mm, origem, usuario)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (
-                    data_ref,
-                    int(hora),
-                    float(valor),
-                    "OPEN-METEO",
-                    usuario
-                )
-            )
-
-        conn.commit()
-        conn.close()
-
-        registrar_log(usuario, "SALVAR PLUVIOMETRIA", "pluviometria", f"Data: {data_ref}")
-        return True
-
     except Exception as e:
-        print("Erro ao salvar pluviometria:", e)
+        print(f"Erro batch: {e}")
+        conn.rollback()
         return False
-
-def get_pluviometria_periodo(data_ini, data_fim):
-    conn = get_connection()
-    if not conn:
-        return []
-
-    try:
-        c = conn.cursor()
-        c.execute(
-            "SELECT data, hora, chuva_mm FROM pluviometria WHERE data BETWEEN %s AND %s ORDER BY data, hora",
-            (data_ini, data_fim)
-        )
-
-        dados = c.fetchall()
+    finally:
         conn.close()
-        return dados
 
-    except Exception:
-        return []
+def delete_efetivo_por_data(data, usuario):
+    sql = "DELETE FROM efetivo_diario WHERE data=%s"
+    return execute_non_query(sql, (data,), "DELETE", "efetivo_diario", usuario)
+
+# =========================
+# PLUVIOMETRIA
+# =========================
+
+def get_pluviometria_periodo(d_ini, d_fim):
+    sql = "SELECT data, hora, chuva_mm FROM pluviometria WHERE data BETWEEN %s AND %s ORDER BY data, hora"
+    return run_query(sql, (d_ini, d_fim))
+
+def add_pluviometria(data, horas_dict, usuario):
+    conn = get_connection()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        for h, mm in horas_dict.items():
+            cur.execute("INSERT INTO pluviometria (data, hora, chuva_mm) VALUES (%s, %s, %s)", (data, h, mm))
+        conn.commit()
+        add_log(usuario, "INSERT_BATCH", "pluviometria", f"Data: {data}")
+        return True
+    except:
+        return False
+    finally:
+        conn.close()
