@@ -242,7 +242,6 @@ def add_efetivo_diario_batch(df, usuario):
     if not conn: return False
     try:
         cur = conn.cursor()
-        # Preparar dados para inserção eficiente
         data_to_insert = []
         for _, row in df.iterrows():
             data_val = row['Data']
@@ -258,11 +257,9 @@ def add_efetivo_diario_batch(df, usuario):
                 str(row['Situacao'])
             ))
         
-        # Inserção em massa (Batch)
         from psycopg2.extras import execute_values
         sql = "INSERT INTO efetivo_diario (data, matricula, nome, funcao, status_val, situacao) VALUES %s"
         execute_values(cur, sql, data_to_insert)
-        
         conn.commit()
         add_log(usuario, "INSERT_BATCH", "efetivo_diario", f"Lote de {len(df)} registros")
         return True

@@ -111,6 +111,29 @@ div[data-testid="metric-container"] {
 }
 .metric-card h3 { margin: 0; font-size: 16px; color: #666; }
 .metric-card h2 { margin: 10px 0 0 0; font-size: 32px; color: #1E3A8A; }
+
+/* Estilo para o Footer Customizado */
+.footer {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: #0F172A;
+    color: #E2E8F0;
+    text-align: center;
+    padding: 10px 0;
+    font-size: 14px;
+    z-index: 999;
+}
+.footer a {
+    color: #3B82F6;
+    text-decoration: none;
+    margin: 0 10px;
+    font-weight: 600;
+}
+.footer a:hover {
+    text-decoration: underline;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -245,6 +268,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Definição das Abas conforme perfil
 if st.session_state.logged_in:
     tabs_list = ["📅 Efetivo Diário", "➕ Novo Colaborador", "✍️ Apontar Horas", "📊 Dash Efetivo", "📈 Dash Produtividade", "📖 Consulta Geral", "⏱️ Registros de Horas", "⚙️ Gestão de Funções", "🚜 Gestão de Equipamentos", "✏️ Atualizar Dados", "🗑️ Remover Registro", "👥 Gestão de Usuários", "🔍 Auditoria", "🌧️ Pluviometria", "🌧️ Histórico Chuva"]
 else:
@@ -252,7 +276,45 @@ else:
 
 aba_view = st.tabs(tabs_list)
 
-# --- ABA 0: EFETIVO DIÁRIO ---
+# --- FUNÇÃO RENDERIZAR PLUVIOMETRIA (Unificada) ---
+def render_pluviometria(key_suffix=""):
+    st.subheader("🌧️ Pluviometria – Open-Meteo | Barueri")
+    c1, c2, c3 = st.columns([2,2,1])
+    with c1: st.text_input("Origem / Fonte", "Open-Meteo", disabled=True, key=f"pluv_src_{key_suffix}")
+    with c2: data_ref = st.date_input("Data", value=get_now_br().date(), key=f"pluv_date_{key_suffix}")
+    with c3: st.button("🔄 Atualizar", key=f"pluv_refresh_{key_suffix}")
+    
+    horas = get_pluviometria_cruzada(data_ref)
+    total_mm = sum(horas.values())
+    
+    col1, col2 = st.columns(2)
+    with col1: st.metric("🌧️ Volume Hoje (mm)", f"{total_mm:.2f}")
+
+    def cor_chuva(mm):
+        if mm == 0: return "#F8FAFC"
+        elif mm <= 0.2: return "#DBEAFE"
+        elif mm <= 1: return "#93C5FD"
+        elif mm <= 5: return "#3B82F6"
+        else: return "#1E3A8A"
+
+    turnos = {
+        "🌅 Manhã":[6,7,8,9,10,11], "☀️ Tarde":[12,13,14,15,16,17],
+        "🌃 Noite":[18,19,20,21,22,23], "🌙 Madrugada":[0,1,2,3,4,5]
+    }
+    for periodo, horas_lista in turnos.items():
+        st.markdown(f"### {periodo}")
+        cols = st.columns(6)
+        for i, h in enumerate(horas_lista):
+            mm = horas[h]
+            cor = cor_chuva(mm)
+            texto_cor = "#0F172A" if mm == 0 else "white"
+            with cols[i]:
+                st.markdown(f"**{h}h**")
+                st.markdown(f"<div style='background:{cor}; padding:10px; border-radius:12px; text-align:center; font-weight:700; color:{texto_cor}; border:1px solid #E5E7EB'>{mm:.2f} mm</div>", unsafe_allow_html=True)
+    return data_ref, horas
+
+# --- LÓGICA DE ABAS ---
+# 0: Efetivo Diário
 with aba_view[0]:
     st.subheader("📅 Controle de Efetivo Diário")
     if st.session_state.logged_in:
@@ -266,14 +328,11 @@ with aba_view[0]:
                         try:
                             if df_u['Data'].dtype == 'object': df_u['Data'] = pd.to_datetime(df_u['Data'])
                             datas_no_arquivo = df_u['Data'].unique()
-                            st.info(f"Deletando dados de {len(datas_no_arquivo)} data(s)...")
                             for d in datas_no_arquivo:
                                 if hasattr(d, 'date'): d = d.date()
                                 db.delete_efetivo_por_data(d, st.session_state.user_name)
-                            st.info(f"Inserindo {len(df_u)} registros...")
                             if db.add_efetivo_diario_batch(df_u, st.session_state.user_name):
-                                st.success("Efetivo carregado com sucesso!")
-                                time.sleep(1); st.rerun()
+                                st.success("Efetivo carregado com sucesso!"); time.sleep(1); st.rerun()
                             else: st.error("Erro ao inserir registros no banco.")
                         except Exception as process_error: st.error(f"Erro ao processar arquivo: {process_error}")
                     else: st.error(f"Colunas necessárias: {', '.join(cols_required)}")
@@ -283,7 +342,6 @@ with aba_view[0]:
     if dados_efetivo is not None and not dados_efetivo.empty:
         df_ef = pd.DataFrame(dados_efetivo)
         df_ef['Data'] = pd.to_datetime(df_ef['Data']).dt.date
-        st.markdown("#### 🔍 Filtros de Visualização")
         f1, f2, f3 = st.columns(3)
         hoje = get_now_br().date()
         primeiro_dia_mes = hoje.replace(day=1)
@@ -327,22 +385,21 @@ with aba_view[0]:
                     for a in sorted(df_detalhe['Abrev'].unique()):
                         with st.expander(f"🔸 {a}"):
                             for n in df_detalhe[df_detalhe['Abrev'] == a]['Nome'].tolist(): st.write(f"- {n}")
-                else: st.info("Clique sobre o status para visualizar o efetivo.")
     else: st.info("Nenhum dado de efetivo diário carregado.")
 
-# --- ABA 1: NOVO COLABORADOR / DASH EFETIVO ---
-if st.session_state.logged_in:
-    with aba_view[1]:
+# 1: Novo Colaborador (Logado) / Dash Efetivo (Público)
+with aba_view[1]:
+    if st.session_state.logged_in:
         st.subheader("➕ Cadastro de Novo Colaborador")
         funcoes_disponiveis = db.get_funcoes()
         with st.form(key=f"form_novo_colab_{st.session_state.form_key}"):
             c1, c2 = st.columns(2)
             with c1:
-                mat = st.text_input("Matrícula *", autocomplete="off")
-                nome = st.text_input("Nome Completo *", autocomplete="off")
+                mat = st.text_input("Matrícula *")
+                nome = st.text_input("Nome Completo *")
                 func = st.selectbox("Função/Cargo *", funcoes_disponiveis)
             with c2:
-                abrev = st.text_input("Abreviação", autocomplete="off")
+                abrev = st.text_input("Abreviação")
                 adm = st.date_input("Data de Admissão")
                 mo = st.selectbox("Tipo de MO", ["MOD", "MOI"])
                 status = st.selectbox("Status", ["Ativo", "Inativo"])
@@ -351,9 +408,7 @@ if st.session_state.logged_in:
                     success, msg = db.add_funcionario(mat, nome, func, abrev, adm, mo, status, st.session_state.user_name)
                     if success: st.success("Cadastrado!"); reset_form(); time.sleep(0.5); st.rerun()
                     else: st.error(f"Erro: {msg}")
-                else: st.error("Preencha os campos obrigatórios.")
-else:
-    with aba_view[1]:
+    else:
         st.subheader("📊 Dashboard de Efetivo")
         df = db.get_funcionarios()
         if not df.empty:
@@ -369,9 +424,9 @@ else:
                 fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Ativos)", color_discrete_sequence=['#FFD700'], text_auto=True)
                 st.plotly_chart(fig, use_container_width=True)
 
-# --- ABA 2: APONTAR HORAS / DASH PRODUTIVIDADE ---
-if st.session_state.logged_in:
-    with aba_view[2]:
+# 2: Apontar Horas (Logado) / Dash Produtividade (Público)
+with aba_view[2]:
+    if st.session_state.logged_in:
         st.subheader("✍️ Novo Apontamento Diário")
         df_func = db.get_funcionarios()
         mats = df_func['matricula'].tolist() if not df_func.empty else []
@@ -408,26 +463,31 @@ if st.session_state.logged_in:
                     success, msg = db.add_apontamento(sel_mat, nome_auto, funcao_auto, equip, ativ, ent, s_alm, r_alm, s_fin, total_h, h_norm, h_extra, data_ap, st.session_state.user_name, considerar_100_extra=extra_100)
                     if success: st.success("Registrado!"); reset_form(); time.sleep(0.5); st.rerun()
                     else: st.error(f"Erro: {msg}")
-                else: st.warning("Preencha os campos obrigatórios.")
-else:
-    with aba_view[2]:
-        st.subheader("📈 Dashboard de Produtividade")
+    else:
+        st.subheader("📈 Dashboard de Produtividade Dinâmico")
         df_ap = db.get_apontamentos()
         if not df_ap.empty:
             df_ap['data'] = pd.to_datetime(df_ap['data'])
             df_ap['Horas_Dec'] = df_ap['total'].apply(horas_para_decimal)
             df_ap['Mes_Ano'] = df_ap['data'].dt.strftime('%m/%Y')
             meses_disp = sorted(df_ap['Mes_Ano'].unique(), reverse=True)
-            mes_sel = st.selectbox("Mês de Referência", meses_disp)
-            df_f = df_ap[df_ap['Mes_Ano'] == mes_sel].sort_values('data')
-            if not df_f.empty:
-                df_dia = df_f.groupby('data')['Horas_Dec'].sum().reset_index()
-                fig_dia = px.line(df_dia, x='data', y='Horas_Dec', title=f"Horas por Dia - {mes_sel}", markers=True)
-                st.plotly_chart(fig_dia, use_container_width=True)
+            mes_sel = st.selectbox("Mês de Referência", meses_disp, key="pub_mes_sel")
+            df_mes = df_ap[df_ap['Mes_Ano'] == mes_sel]
+            df_func_prod = df_mes.groupby('funcao')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
+            fig_func = px.bar(df_func_prod, x='funcao', y='Horas_Dec', title="Produtividade por Função (Horas)", color_discrete_sequence=['#1E3A8A'], text_auto=True)
+            sel_func = st.plotly_chart(fig_func, use_container_width=True, on_select="rerun")
+            df_equip_filtered = df_mes.copy()
+            if sel_func and "selection" in sel_func and "points" in sel_func["selection"] and sel_func["selection"]["points"]:
+                func_filtrada = sel_func["selection"]["points"][0]["x"]
+                df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]
+                st.info(f"Filtro Ativo: Função **{func_filtrada}**")
+            df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
+            fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
+            st.plotly_chart(fig_equip, use_container_width=True)
 
-# --- ABA 3: DASH EFETIVO (LOGADO) / CONSULTA GERAL (PÚBLICO) ---
-if st.session_state.logged_in:
-    with aba_view[3]:
+# 3: Dash Efetivo (Logado) / Consulta Geral (Público)
+with aba_view[3]:
+    if st.session_state.logged_in:
         st.subheader("📊 Dashboard de Efetivo")
         df = db.get_funcionarios()
         if not df.empty:
@@ -442,8 +502,7 @@ if st.session_state.logged_in:
                 counts.columns = ['Função', 'Quantidade']
                 fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Ativos)", color_discrete_sequence=['#FFD700'], text_auto=True)
                 st.plotly_chart(fig, use_container_width=True)
-else:
-    with aba_view[3]:
+    else:
         st.subheader("📖 Consulta de Efetivo")
         df = db.get_funcionarios()
         if not df.empty:
@@ -457,9 +516,9 @@ else:
             if f_func: df_f = df_f[df_f["funcao"].str.contains(f_func, case=False, na=False)]
             st.dataframe(df_f.map(lambda x: str(x).upper() if pd.notnull(x) else x), use_container_width=True)
 
-# --- ABA 4: DASH PRODUTIVIDADE DINÂMICO (LOGADO) / CONSULTA GERAL (PÚBLICO) ---
-if st.session_state.logged_in:
-    with aba_view[4]:
+# 4: Dash Produtividade Dinâmico (Logado) / Registro de Horas (Público)
+with aba_view[4]:
+    if st.session_state.logged_in:
         st.subheader("📈 Dashboard de Produtividade Dinâmico")
         df_ap = db.get_apontamentos()
         if not df_ap.empty:
@@ -480,24 +539,16 @@ if st.session_state.logged_in:
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
             st.plotly_chart(fig_equip, use_container_width=True)
-else:
-    with aba_view[4]:
-        st.subheader("📖 Consulta de Efetivo")
-        df = db.get_funcionarios()
-        if not df.empty:
-            col_f1, col_f2, col_f3 = st.columns(3)
-            with col_f1: f_nome = st.text_input("Buscar por Nome", key="pub_f_nome_2")
-            with col_f2: f_mat = st.text_input("Buscar por Matrícula", key="pub_f_mat_2")
-            with col_f3: f_func = st.text_input("Buscar por Função", key="pub_f_func_2")
-            df_f = df.copy()
-            if f_nome: df_f = df_f[df_f["nome"].str.contains(f_nome, case=False, na=False)]
-            if f_mat: df_f = df_f[df_f["matricula"].astype(str).str.contains(f_mat, case=False, na=False)]
-            if f_func: df_f = df_f[df_f["funcao"].str.contains(f_func, case=False, na=False)]
-            st.dataframe(df_f.map(lambda x: str(x).upper() if pd.notnull(x) else x), use_container_width=True)
+    else:
+        st.subheader("⏱️ Registros de Horas Detalhados")
+        df_ap_full = db.get_apontamentos_com_id()
+        if not df_ap_full.empty:
+            st.dataframe(df_ap_full.head(100), use_container_width=True)
+            st.info("💡 A exclusão de registros é permitida apenas para administradores.")
 
-# --- ABAS EXCLUSIVAS DE GESTÃO (LOGADO) ---
-if st.session_state.logged_in:
-    with aba_view[5]:
+# 5: Consulta Geral (Logado) / Pluviometria (Público)
+with aba_view[5]:
+    if st.session_state.logged_in:
         st.subheader("📖 Consulta de Efetivo Completa")
         df = db.get_funcionarios()
         if not df.empty:
@@ -512,8 +563,12 @@ if st.session_state.logged_in:
             if f_mat: df_f = df_f[df_f["matricula"].astype(str).str.contains(f_mat, case=False, na=False)]
             if f_func: df_f = df_f[df_f["funcao"].str.contains(f_func, case=False, na=False)]
             st.dataframe(df_f.map(lambda x: str(x).upper() if pd.notnull(x) else x), use_container_width=True)
+    else:
+        render_pluviometria("pub")
 
-    with aba_view[6]:
+# 6: Registro de Horas (Logado) / Histórico Chuva (Público)
+with aba_view[6]:
+    if st.session_state.logged_in:
         st.subheader("⏱️ Registros de Horas Detalhados")
         df_ap_full = db.get_apontamentos_com_id()
         if not df_ap_full.empty:
@@ -521,9 +576,23 @@ if st.session_state.logged_in:
             with st.expander("🗑️ Excluir Registros"):
                 sel_excluir = st.multiselect("Selecione os IDs para remover", df_ap_full['id'].tolist())
                 if st.button("EXCLUIR SELECIONADOS"):
-                    for s in sel_excluir: db.delete_apontamento_por_id(s, st.session_state.user_name)
-                    st.success("Excluído!"); time.sleep(0.5); st.rerun()
+                    if st.session_state.user_name == 'admin':
+                        for s in sel_excluir: db.delete_apontamento_por_id(s, st.session_state.user_name)
+                        st.success("Excluído!"); time.sleep(0.5); st.rerun()
+                    else: st.error("Apenas o administrador pode excluir registros.")
+    else:
+        st.subheader("🌧️ Histórico de Pluviometria")
+        c1, c2 = st.columns(2)
+        d_ini_p = c1.date_input("Início", value=get_now_br().date() - timedelta(days=7), key="h_ini_pub")
+        d_fim_p = c2.date_input("Fim", value=get_now_br().date(), key="h_fim_pub")
+        df_h = db.get_pluviometria_periodo(d_ini_p, d_fim_p)
+        if not df_h.empty:
+            df_h['data'] = pd.to_datetime(df_h['data'])
+            fig_p = px.bar(df_h.groupby('data')['chuva_mm'].sum().reset_index(), x='data', y='chuva_mm', title="Total Diário de Chuva", text_auto=True)
+            st.plotly_chart(fig_p, use_container_width=True)
 
+# Abas exclusivas de Gestão (Logado)
+if st.session_state.logged_in:
     with aba_view[7]:
         st.subheader("⚙️ Gestão de Funções")
         c1, c2 = st.columns([2, 1])
@@ -594,86 +663,31 @@ if st.session_state.logged_in:
         if not df_logs.empty: st.dataframe(df_logs, use_container_width=True)
         else: st.info("Nenhum log registrado.")
 
+    with aba_view[13]:
+        data_ref, horas = render_pluviometria("log")
+        if st.button("💾 Salvar Pluviometria"):
+            if db.add_pluviometria(data_ref, horas, st.session_state.user_name): st.success("Salvo!")
 
-# --- ABA PLUVIOMETRIA ---
-def render_pluviometria():
-    st.subheader("🌧️ Pluviometria – Open-Meteo | Barueri")
-    c1, c2, c3 = st.columns([2,2,1])
-    with c1: st.text_input("Origem / Fonte", "Open-Meteo", disabled=True)
-    with c2: data_ref = st.date_input("Data", value=get_now_br().date(), key="pluv_date")
-    with c3: st.button("🔄 Atualizar", key="pluv_refresh")
-    
-    horas = get_pluviometria_cruzada(data_ref)
-    total_mm = sum(horas.values())
-    
-    col1, col2 = st.columns(2)
-    with col1: 
-        st.metric("🌧️ Volume Hoje (mm)", f"{total_mm:.2f}")
+    with aba_view[14]:
+        st.subheader("🌧️ Histórico de Pluviometria")
+        c1, c2 = st.columns(2)
+        d_ini_p = c1.date_input("Início", value=get_now_br().date() - timedelta(days=7), key="h_ini_log")
+        d_fim_p = c2.date_input("Fim", value=get_now_br().date(), key="h_fim_log")
+        df_h = db.get_pluviometria_periodo(d_ini_p, d_fim_p)
+        if not df_h.empty:
+            df_h['data'] = pd.to_datetime(df_h['data'])
+            fig_p = px.bar(df_h.groupby('data')['chuva_mm'].sum().reset_index(), x='data', y='chuva_mm', title="Total Diário de Chuva", text_auto=True)
+            st.plotly_chart(fig_p, use_container_width=True)
 
-    def cor_chuva(mm):
-        if mm == 0:
-            return "#F8FAFC"   # super discreto
-        elif mm <= 0.2:
-            return "#DBEAFE"
-        elif mm <= 1:
-            return "#93C5FD"
-        elif mm <= 5:
-            return "#3B82F6"
-        else:
-            return "#1E3A8A"
-
-    turnos = {
-        "🌅 Manhã":[6,7,8,9,10,11],
-        "☀️ Tarde":[12,13,14,15,16,17],
-        "🌃 Noite":[18,19,20,21,22,23],
-        "🌙 Madrugada":[0,1,2,3,4,5]
-    }
-
-    for periodo, horas_lista in turnos.items():
-        st.markdown(f"### {periodo}")
-        cols = st.columns(6)
-        for i, h in enumerate(horas_lista):
-            mm = horas[h]
-            cor = cor_chuva(mm)
-            texto_cor = "#0F172A" if mm == 0 else "white"
-            with cols[i]:
-                st.markdown(f"**{h}h**")
-                st.markdown(
-                    f"""
-                    <div style='
-                        background:{cor};
-                        padding:10px;
-                        border-radius:12px;
-                        text-align:center;
-                        font-weight:700;
-                        color:{texto_cor};
-                        border:1px solid #E5E7EB'>
-                        {mm:.2f} mm
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-    if st.session_state.logged_in and st.button("💾 Salvar Pluviometria"):
-        if db.add_pluviometria(data_ref, horas, st.session_state.user_name):
-            st.success("Salvo!")
-
-
-idx_pluv = tabs_list.index("🌧️ Pluviometria")
-with aba_view[idx_pluv]: render_pluviometria()
-
-# --- ABA HISTÓRICO CHUVA ---
-idx_hist = tabs_list.index("🌧️ Histórico Chuva")
-with aba_view[idx_hist]:
-    st.subheader("🌧️ Histórico de Pluviometria")
-    c1, c2 = st.columns(2)
-    d_ini_p = c1.date_input("Início", value=get_now_br().date() - timedelta(days=7), key="h_ini")
-    d_fim_p = c2.date_input("Fim", value=get_now_br().date(), key="h_fim")
-    df_h = db.get_pluviometria_periodo(d_ini_p, d_fim_p)
-    if not df_h.empty:
-        df_h['data'] = pd.to_datetime(df_h['data'])
-        fig_p = px.bar(df_h.groupby('data')['chuva_mm'].sum().reset_index(), x='data', y='chuva_mm', title="Total Diário de Chuva", text_auto=True)
-        st.plotly_chart(fig_p, use_container_width=True)
+# --- FOOTER CUSTOMIZADO ---
+st.markdown(f"""
+    <div class="footer">
+        <span>Desenvolvido por <b>Seu Nome</b></span> | 
+        <a href="https://www.linkedin.com/in/seu-perfil" target="_blank">LinkedIn</a> | 
+        <a href="https://seu-portfolio.com" target="_blank">Portfólio</a> | 
+        <a href="https://wa.me/5511999999999" target="_blank">WhatsApp</a>
+    </div>
+""", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("<div class='sidebar-footer'><b>GRUPO SANTIN</b><br>Sistema Corporativo de Controle de Obras<br>Business Intelligence • Engenharia • Gestão de Projetos</div>", unsafe_allow_html=True)
