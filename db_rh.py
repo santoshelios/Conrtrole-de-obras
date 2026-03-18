@@ -208,18 +208,26 @@ def check_sobreposicao(mat, data, ent, saida, id_ignore=None):
     return False
 
 def add_apontamento(mat, nome, func_name, equip, ativ, ent, s_alm, r_alm, s_fin, total_h, h_norm, h_extra, data, usuario, considerar_100_extra=False):
+    # 1 - Verificação de Status Inativo
     func = get_funcionario_por_matricula(mat)
     if not func: return False, "Colaborador não encontrado."
     if str(func['status']).strip().lower() in ['inativo', 'desligado']:
-        return False, f"Erro: Colaborador {func['nome']} está INATIVO."
+        return False, f"Erro: Colaborador {func['nome']} está INATIVO. Apontamento não permitido."
+    
     t_ent = str_to_time(ent)
     t_s_alm = str_to_time(s_alm)
     t_r_alm = str_to_time(r_alm)
     t_sai = str_to_time(s_fin)
+    
+    # 2 - Verificação de Horário de Almoço
     if t_r_alm and t_s_alm and t_r_alm < t_s_alm:
-        return False, "Erro: Retorno do Almoço menor que Saída."
+        return False, "Erro: Retorno do Almoço não pode ser menor que Saída para Almoço."
+    
+    # 3 - Verificação de Sobreposição
     if check_sobreposicao(mat, data, ent, s_fin):
-        return False, "Erro: Sobreposição de horários."
+        return False, "Erro: Já existe um apontamento neste horário (Sobreposição)."
+    
+    # 4 - Inserção com horas_normais e horas_extra calculadas
     sql = """INSERT INTO apontamentos 
              (matricula, nome, funcao, equipamento, atividade, entrada, s_almoco, r_almoco, saida, total, horas_normais, horas_extra, data, status) 
              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
@@ -260,6 +268,7 @@ def add_efetivo_diario_batch(df, usuario):
         from psycopg2.extras import execute_values
         sql = "INSERT INTO efetivo_diario (data, matricula, nome, funcao, status_val, situacao) VALUES %s"
         execute_values(cur, sql, data_to_insert)
+        
         conn.commit()
         add_log(usuario, "INSERT_BATCH", "efetivo_diario", f"Lote de {len(df)} registros")
         return True
