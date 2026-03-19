@@ -523,11 +523,11 @@ with aba_view[1]:
         with st.form(key=f"form_novo_colab_{st.session_state.form_key}"):
             c1, c2 = st.columns(2)
             with c1:
-                mat = st.text_input("Matrícula *")
-                nome = st.text_input("Nome Completo *")
+                mat = st.text_input("Matrícula *",autocomplete='off')
+                nome = st.text_input("Nome Completo *",autocomplete='off')
                 func = st.selectbox("Função/Cargo *", funcoes_disponiveis)
             with c2:
-                abrev = st.text_input("Abreviação")
+                abrev = st.text_input("Abreviação",autocomplete='off')
                 adm = st.date_input("Data de Admissão")
                 mo = st.selectbox("Tipo de MO", ["MOD", "MOI"])
                 status = st.selectbox("Status", ["Ativo", "Inativo"])
@@ -571,7 +571,7 @@ with aba_view[2]:
                 func_info = df_func[df_func['matricula'] == sel_mat].iloc[0] if sel_mat and not df_func.empty else None
                 nome_auto = func_info['nome'] if func_info is not None else ""
                 funcao_auto = func_info['funcao'] if func_info is not None else ""
-                st.text_input("Nome", value=nome_auto, disabled=True)
+                st.text_input("Nome", value=nome_auto, disabled=True,autocomplete='off')
                 st.text_input("Função", value=funcao_auto, disabled=True)
                 data_ap = st.date_input("Data do Apontamento", value=get_now_br().date())
             with c2:
@@ -617,6 +617,7 @@ with aba_view[2]:
                 st.info(f"Filtro Ativo: Função **{func_filtrada}**")
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
+            fig.update_layout(xaxis_tickangle = -45)
             st.plotly_chart(fig_equip, use_container_width=True)
 
 # --- ABA 3: DASH EFETIVO / CONSULTA GERAL ---
