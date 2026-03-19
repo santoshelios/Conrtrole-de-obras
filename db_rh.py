@@ -292,16 +292,44 @@ def get_pluviometria_periodo(d_ini, d_fim):
     return run_query(sql, (d_ini, d_fim))
 
 def add_pluviometria(data, horas_dict, usuario):
+
     conn = get_connection()
-    if not conn: return False
+    if not conn:
+        return False
+
     try:
         cur = conn.cursor()
-        for h, mm in horas_dict.items():
-            cur.execute("INSERT INTO pluviometria (data, hora, chuva_mm) VALUES (%s, %s, %s)", (data, h, mm))
+
+        for hora, mm in horas_dict.items():
+
+            cur.execute("""
+                INSERT INTO pluviometria
+                (data, hora, chuva_mm, usuario)
+
+                VALUES (%s, %s, %s, %s)
+
+                ON CONFLICT (data, hora)
+                DO UPDATE SET
+                    chuva_mm = EXCLUDED.chuva_mm,
+                    usuario = EXCLUDED.usuario,
+                    created_at = NOW()
+            """, (data, hora, mm, usuario))
+
         conn.commit()
-        add_log(usuario, "INSERT_BATCH", "pluviometria", f"Data: {data}")
+
+        add_log(
+            usuario,
+            "UPSERT_BATCH",
+            "pluviometria",
+            f"Data: {data}"
+        )
+
         return True
-    except:
+
+    except Exception as e:
+        print("Erro pluviometria:", e)
+        conn.rollback()
         return False
+
     finally:
         conn.close()

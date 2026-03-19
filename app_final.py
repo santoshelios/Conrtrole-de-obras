@@ -308,13 +308,27 @@ def render_pluviometria(key_suffix=""):
 
     col1, col2 = st.columns(2)
     with col1: st.metric("🌧️ Volume Hoje (mm)", f"{total_mm:.2f}")
+    
+
 
     def cor_chuva(mm):
-        if mm == 0: return "#F8FAFC"
-        elif mm <= 0.2: return "#DBEAFE"
-        elif mm <= 1: return "#93C5FD"
-        elif mm <= 5: return "#3B82F6"
-        else: return "#1E3A8A"
+        if mm == 0:
+            return "#F8FAFC"
+        elif mm <= 0.3:
+            return "#BFDBFE"
+        elif mm <= 1:
+            return "#60A5FA"
+        elif mm <= 3:
+            return "#3B82F6"
+        elif mm <= 6:
+         return "#2563EB"
+        else:
+         return "#1E3A8A"
+        #if mm == 0: return "#F8FAFC"
+        #elif mm <= 0.2: return "#DBEAFE"
+        #elif mm <= 1: return "#93C5FD"
+        #elif mm <= 5: return "#3B82F6"
+        #else: return "#1E3A8A"
 
     turnos = {
         "🌅 Manhã":[6,7,8,9,10,11], "☀️ Tarde":[12,13,14,15,16,17],
@@ -326,10 +340,61 @@ def render_pluviometria(key_suffix=""):
         for i, h in enumerate(horas_lista):
             mm = horas[h]
             cor = cor_chuva(mm)
-            texto_cor = "#0F172A" if mm == 0 else "white"
+            if mm <=1:
+                texto_cor = '#0F172A'
+            else:
+                texto_cor = 'white'
+            #texto_cor = "#0F172A" if mm == 0 else "white"
+            border = "1px solid #E5E7EB" if mm == 0 else "none"
             with cols[i]:
                 st.markdown(f"**{h}h**")
-                st.markdown(f"<div style='background:{cor};padding:8px;border-radius:8px;text-align:center;font-weight:700;color:{texto_cor}'>{mm:.2f} mm</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:{cor};padding:8px;border-radius:8px;border:{border};text-align:center;font-weight:700;color:{texto_cor}'>{mm:.2f} mm</div>", unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="margin-top:30px;margin-bottom:20px;border-top:1px solid #9BBAE8;"></div>
+    """, unsafe_allow_html=True)
+
+# ===== PREVISÃO 7 DIAS =====
+    st.markdown("### 🌦️ Previsão de Chuva — Próximos 7 dias")
+
+    @st.cache_data(ttl=1800)
+    def get_forecast():
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": -23.505,
+            "longitude": -46.879,
+            "daily": "precipitation_sum",
+            "timezone": "America/Sao_Paulo",
+            "forecast_days": 7
+        }
+        r = requests.get(url, params=params, timeout=20)
+        return r.json().get("daily", {})
+
+    prev = get_forecast()
+
+    if prev:
+        df_prev = pd.DataFrame({
+            "Data": prev.get("time", []),
+            "Chuva (mm)": prev.get("precipitation_sum", [])
+        })
+
+        fig_prev = px.bar(
+            df_prev,
+            x="Data",
+            y="Chuva (mm)",
+            color="Chuva (mm)",
+            color_continuous_scale="Blues",
+            text_auto=True
+        )
+
+        fig_prev.update_layout(
+            xaxis_tickangle=-45,
+            yaxis_title="mm",
+            xaxis_title=None
+        )
+
+        st.plotly_chart(fig_prev, use_container_width=True)
+
     return data_ref, horas
 
 # --- ABA 0: EFETIVO DIÁRIO ---
@@ -373,18 +438,57 @@ with aba_view[0]:
             situacoes_disp = ["TODAS"] + sorted(df_ef['Situacao'].unique().tolist())
             sit_filtro = st.selectbox("Filtrar Situação", situacoes_disp)
         
-        df_hist = df_ef[(df_ef['Data'] >= d_ini) & (df_ef['Data'] <= d_fim) & (df_ef['Status_Val'] == 1)]
+        
+        # ===== HISTÓRICO APENAS STATUS = 1 (PRESENTE) =====
+        df_hist = df_ef[
+            (df_ef['Data'] >= d_ini) &
+            (df_ef['Data'] <= d_fim)
+        ].copy()
+
+        # força numérico seguro
+        df_hist['Status_Val'] = pd.to_numeric(df_hist['Status_Val'], errors='coerce')
+
+        df_hist = df_hist[df_hist['Status_Val'] == 1]
+
         if not df_hist.empty:
-            df_hist_count = df_hist.groupby('Data').size().reset_index(name='Quantidade')
+
+            df_hist_count = (
+                df_hist.groupby('Data')['Matricula']
+                .nunique()
+                .reset_index(name='Quantidade')
+            )
+
             intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
             df_full = pd.DataFrame({'Data': intervalo_datas})
+
             df_hist_count['Data'] = pd.to_datetime(df_hist_count['Data'])
-            df_full = df_full.merge(df_hist_count, on='Data', how='left').fillna(0)
+
+            df_full = (
+                df_full
+                .merge(df_hist_count, on='Data', how='left')
+                .fillna(0)
+            )
+
             df_full['Quantidade'] = df_full['Quantidade'].astype(int)
-            # Adicionado text='Quantidade' e textposition='top center' para exibir valores nos markers
-            fig_hist = px.line(df_full, x='Data', y='Quantidade', title="Evolução do Efetivo Presente", markers=True, line_shape='spline', text='Quantidade')
-            fig_hist.update_traces(line=dict(width=2.5, color="#2563EB"), marker=dict(size=8, color="#1E3A8A"), textposition="top center")
+
+            fig_hist = px.line(
+                df_full,
+                x='Data',
+                y='Quantidade',
+                title="Evolução do Efetivo Presente",
+                markers=True,
+                line_shape='spline',
+                text='Quantidade'
+            )
+
+            fig_hist.update_traces(
+                line=dict(width=2.5, color="#2563EB"),
+                marker=dict(size=8, color="#1E3A8A"),
+                textposition="top center"
+            )
+
             st.plotly_chart(fig_hist, use_container_width=True)
+
 
         st.markdown("---")
         st.markdown("### 📋 Status do Dia")
@@ -447,6 +551,10 @@ with aba_view[1]:
                 counts = df_ativos['Abrev_Upper'].value_counts().reset_index()
                 counts.columns = ['Função', 'Quantidade']
                 fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Ativos)", color_discrete_sequence=['#FFD700'], text_auto=True)
+                fig.update_layout(
+                    xaxis_tickangle = -45
+                )
+                
                 st.plotly_chart(fig, use_container_width=True)
 
 # --- ABA 2: APONTAR HORAS / DASH PRODUTIVIDADE ---
