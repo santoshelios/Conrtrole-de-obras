@@ -240,7 +240,7 @@ with st.sidebar:
     if not st.session_state.logged_in:
         user = st.text_input("Usuário", placeholder="Digite seu usuário", autocomplete='off')
         password = st.text_input("Senha", type="password", placeholder="Digite sua senha", autocomplete='new-password')
-        if st.button("ENTRAR NO SISTEMA"):
+        if st.button("ENTRAR NO SISTEMA",use_container_width=True):
             if db.check_login(user, password):
                 st.session_state.logged_in = True
                 st.session_state.user_name = user
@@ -255,7 +255,7 @@ with st.sidebar:
                 <div style="font-size:18px; font-weight:700; color:#FFFFFF;">{st.session_state.user_name}</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("SAIR DO SISTEMA"):
+        if st.button("SAIR DO SISTEMA",width='stretch'):
             st.session_state.logged_in = False
             st.session_state.user_name = "Visitante"
             st.rerun()
@@ -814,7 +814,14 @@ if st.session_state.logged_in:
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("<div class='sidebar-footer'><b>GRUPO SANTIN</b><br>Sistema Corporativo de Controle de Obras<br>Business Intelligence • Engenharia • Gestão de Projetos</div>", unsafe_allow_html=True)
+#st.sidebar.info("Sistema de Gestão de Obras v2.0")
+st.sidebar.markdown(
+    "<div style='margin-top:60px'></div>",
+    unsafe_allow_html=True
+)
+
 st.sidebar.info("Sistema de Gestão de Obras v2.0")
+
 
 # --- FOOTER PROFISSIONAL ---
 st.markdown("""
