@@ -635,9 +635,6 @@ with aba_view[3]:
                 counts = df_ativos['Abrev_Upper'].value_counts().reset_index()
                 counts.columns = ['Função', 'Quantidade']
                 fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Ativos)", color_discrete_sequence=['#FFD700'], text_auto=True)
-                fig.update_layout(
-                    xaxis_tickangle = -45
-                )
                 st.plotly_chart(fig, use_container_width=True)
     else:
         st.subheader("📖 Consulta de Efetivo")
