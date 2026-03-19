@@ -617,7 +617,6 @@ with aba_view[2]:
                 st.info(f"Filtro Ativo: Função **{func_filtrada}**")
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
-            fig.update_layout(xaxis_tickangle = -45)
             st.plotly_chart(fig_equip, use_container_width=True)
 
 # --- ABA 3: DASH EFETIVO / CONSULTA GERAL ---
@@ -636,6 +635,7 @@ with aba_view[3]:
                 counts = df_ativos['Abrev_Upper'].value_counts().reset_index()
                 counts.columns = ['Função', 'Quantidade']
                 fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Ativos)", color_discrete_sequence=['#FFD700'], text_auto=True)
+                fig.update_layout(xaxis_tickangle = -45)
                 st.plotly_chart(fig, use_container_width=True)
     else:
         st.subheader("📖 Consulta de Efetivo")
