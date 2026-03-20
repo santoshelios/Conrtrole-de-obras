@@ -545,6 +545,8 @@ with aba_view[1]:
             with m1: st.markdown(f"<div class='metric-card'><h3>Total Efetivo</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
             with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
             with m3: st.markdown(f"<div class='metric-card'><h3>Inativos</h3><h2 style='color: red;'>{len(df[df['status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
+                     
+            
             df_ativos = df[df['status'] == 'Ativo'].copy()
             if df_ativos is not None and not df_ativos.empty:
                 df_ativos['Abrev_Upper'] = df_ativos['abrev'].fillna(df_ativos['funcao']).astype(str).str.upper()
@@ -613,8 +615,7 @@ with aba_view[2]:
             df_equip_filtered = df_mes.copy()
             if sel_func and "selection" in sel_func and "points" in sel_func["selection"] and sel_func["selection"]["points"]:
                 func_filtrada = sel_func["selection"]["points"][0]["x"]
-                df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]
-                st.info(f"Filtro Ativo: Função **{func_filtrada}**")
+                df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]                
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
             st.plotly_chart(fig_equip, use_container_width=True)
@@ -629,6 +630,7 @@ with aba_view[3]:
             with m1: st.markdown(f"<div class='metric-card'><h3>Total Efetivo</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
             with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
             with m3: st.markdown(f"<div class='metric-card'><h3>Inativos</h3><h2 style='color: red;'>{len(df[df['status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
+            
             df_ativos = df[df['status'] == 'Ativo'].copy()
             if df_ativos is not None and not df_ativos.empty:
                 df_ativos['Abrev_Upper'] = df_ativos['abrev'].fillna(df_ativos['funcao']).astype(str).str.upper()
@@ -669,8 +671,7 @@ with aba_view[4]:
             df_equip_filtered = df_mes.copy()
             if sel_func and "selection" in sel_func and "points" in sel_func["selection"] and sel_func["selection"]["points"]:
                 func_filtrada = sel_func["selection"]["points"][0]["x"]
-                df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]
-                st.info(f"Filtro Ativo: Função **{func_filtrada}**")
+                df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]                
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
             st.plotly_chart(fig_equip, use_container_width=True)
