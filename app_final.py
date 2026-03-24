@@ -439,55 +439,130 @@ with aba_view[0]:
             sit_filtro = st.selectbox("Filtrar Situação", situacoes_disp)
         
         
-        # ===== HISTÓRICO APENAS STATUS = 1 (PRESENTE) =====
+        # ===== HISTÓRICO APENAS STATUS = 1 (PRESENTE) - MOI e MOD =====
+        # 1. Filtramos o período selecionado
         df_hist = df_ef[
             (df_ef['Data'] >= d_ini) &
             (df_ef['Data'] <= d_fim)
         ].copy()
 
-        # força numérico seguro
-        df_hist['Status_Val'] = pd.to_numeric(df_hist['Status_Val'], errors='coerce')
-
-        df_hist = df_hist[df_hist['Status_Val'] == 1]
+        # 2. Identificamos a coluna de Status (pode ser 'Status' ou 'Status_Val')
+        col_status = 'Status' if 'Status' in df_hist.columns else ('Status_Val' if 'Status_Val' in df_hist.columns else None)
+        
+        if col_status:
+            # 3. Forçamos o Status para numérico e filtramos RIGOROSAMENTE apenas Status = 1
+            df_hist[col_status] = pd.to_numeric(df_hist[col_status], errors='coerce')
+            df_hist = df_hist[df_hist[col_status] == 1]
 
         if not df_hist.empty:
+            # 4. Buscamos o cadastro de funcionários para obter o tipo de MO (MOD/MOI)
+            df_cadastro = db.get_funcionarios()
 
-            df_hist_count = (
-                df_hist.groupby('Data')['Matricula']
-                .nunique()
-                .reset_index(name='Quantidade')
-            )
+            if df_cadastro is not None and not df_cadastro.empty:
+                # 5. Preparamos as matrículas para o cruzamento (JOIN)
+                # Garantimos que não haja duplicatas no cadastro para não inflar o merge
+                df_cad_clean = df_cadastro[['matricula', 'mo']].copy()
+                df_cad_clean['matricula'] = pd.to_numeric(df_cad_clean['matricula'], errors='coerce')
+                df_cad_clean = df_cad_clean.drop_duplicates(subset=['matricula'])
+                
+                df_hist['Matricula'] = pd.to_numeric(df_hist['Matricula'], errors='coerce')
 
-            intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
-            df_full = pd.DataFrame({'Data': intervalo_datas})
+                # 6. Trazemos o tipo de MO do cadastro
+                df_mo_info = df_cad_clean.rename(columns={'matricula': 'Matricula', 'mo': 'MO_Tipo'})
+                
+                # 7. Fazemos o merge para classificar cada registro de presença
+                if 'MO_Tipo' in df_hist.columns: df_hist = df_hist.drop(columns=['MO_Tipo'])
+                df_hist = df_hist.merge(df_mo_info, on='Matricula', how='left')
+                df_hist['MO_Tipo'] = df_hist['MO_Tipo'].fillna('NÃO CADASTRADO')
 
-            df_hist_count['Data'] = pd.to_datetime(df_hist_count['Data'])
+                # 8. Criamos a base de datas para o gráfico não ter buracos
+                intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
+                df_full_base = pd.DataFrame({'Data': pd.to_datetime(intervalo_datas).date}, columns=['Data'])
 
-            df_full = (
-                df_full
-                .merge(df_hist_count, on='Data', how='left')
-                .fillna(0)
-            )
+                fig_hist = go.Figure()
+                cores_mo = {'MOD': '#2563EB', 'MOI': '#F59E0B'}
 
-            df_full['Quantidade'] = df_full['Quantidade'].astype(int)
+                # 9. Geramos as linhas para MOD e MOI
+                for tipo in ['MOD', 'MOI']:
+                    # Filtra os presentes (Status 1) que pertencem ao tipo de MO atual
+                    df_tipo = df_hist[df_hist['MO_Tipo'] == tipo].copy()
+                    
+                    # Agrupa por data contando registros únicos (paridade com gráfico de barras)
+                    df_count = (
+                        df_tipo.groupby('Data').size()
+                        .reset_index(name='Quantidade')
+                    )
+                    
+                    # Garante que todos os dias do intervalo apareçam (mesmo com 0)
+                    df_plot = (
+                        df_full_base
+                        .merge(df_count, on='Data', how='left')
+                        .fillna(0)
+                    )
+                    df_plot['Quantidade'] = df_plot['Quantidade'].astype(int)
 
-            fig_hist = px.line(
-                df_full,
-                x='Data',
-                y='Quantidade',
-                title="Evolução do Efetivo Presente",
-                markers=True,
-                line_shape='spline',
-                text='Quantidade'
-            )
+                    # Adiciona a linha ao gráfico
+                    fig_hist.add_trace(go.Scatter(
+                        x=df_plot['Data'],
+                        y=df_plot['Quantidade'],
+                        mode='lines+markers+text',
+                        name=tipo,
+                        line=dict(width=3, color=cores_mo[tipo], shape='spline'),
+                        marker=dict(size=10, color=cores_mo[tipo]),
+                        text=df_plot['Quantidade'],
+                        textposition='top center',
+                        hovertemplate="<b>%{x|%d/%m/%Y}</b><br>Tipo: " + tipo + "<br>Qtd: %{y}<extra></extra>"
+                    ))
 
-            fig_hist.update_traces(
-                line=dict(width=2.5, color="#2563EB"),
-                marker=dict(size=8, color="#1E3A8A"),
-                textposition="top center"
-            )
+                # 10. Configurações visuais do gráfico
+                fig_hist.update_layout(
+                    title='Evolução do Efetivo Presente por Tipo de MO (Status = 1)',
+                    xaxis_title='Data',
+                    yaxis_title='Quantidade de Funcionários',
+                    legend_title='Tipo de MO',
+                    hovermode='x unified',
+                    hoverlabel=dict(
+                        bgcolor="white",
+                        font_size=16,
+                        font_family="Arial"
+                    ),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    margin=dict(t=80, b=40, l=40, r=40)
+                )
 
-            st.plotly_chart(fig_hist, use_container_width=True)
+                st.plotly_chart(fig_hist, use_container_width=True)
+
+            else:
+                # Fallback: gráfico único caso o cadastro não esteja disponível
+                df_hist_count = (
+                    df_hist.groupby('Data')['Matricula']
+                    .nunique()
+                    .reset_index(name='Quantidade')
+                )
+                intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
+                df_full = pd.DataFrame({'Data': intervalo_datas})
+                df_hist_count['Data'] = pd.to_datetime(df_hist_count['Data'])
+                df_full = (
+                    df_full
+                    .merge(df_hist_count, on='Data', how='left')
+                    .fillna(0)
+                )
+                df_full['Quantidade'] = df_full['Quantidade'].astype(int)
+                fig_hist = px.line(
+                    df_full,
+                    x='Data',
+                    y='Quantidade',
+                    title='Evolução do Efetivo Presente',
+                    markers=True,
+                    line_shape='spline',
+                    text='Quantidade'
+                )
+                fig_hist.update_traces(
+                    line=dict(width=2.5, color='#2563EB'),
+                    marker=dict(size=8, color='#1E3A8A'),
+                    textposition='top center'
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
 
 
         st.markdown("---")
