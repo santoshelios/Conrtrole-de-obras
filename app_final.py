@@ -101,16 +101,51 @@ div[data-testid="metric-container"] {
     color: #CBD5E1;
     text-align: center;
 }
+/* Estilo Profissional para os Cards de Indicadores */
 .metric-card {
-    background-color: white;
-    padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    background: white;
+    padding: 25px 20px;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+    border: 1px solid #F1F5F9;
     text-align: center;
-    border: 1px solid #e0e0e0;
+    transition: all 0.3s ease;
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
-.metric-card h3 { margin: 0; font-size: 16px; color: #666; }
-.metric-card h2 { margin: 10px 0 0 0; font-size: 32px; color: #1E3A8A; }
+.metric-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    border-color: #E2E8F0;
+}
+.metric-card h3 {
+    color: #64748B;
+    font-size: 15px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 0 0 10px 0;
+}
+.metric-card h2 {
+    font-size: 42px;
+    font-weight: 800;
+    margin: 0;
+    line-height: 1;
+}
+.metric-icon {
+    font-size: 28px;
+    margin-bottom: 12px;
+    background: #F8FAFC;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
 
 /* Estilo para o Footer Customizado */
 .footer {
@@ -617,9 +652,34 @@ with aba_view[1]:
         df = db.get_funcionarios()
         if df is not None and not df.empty:
             m1, m2, m3 = st.columns(3)
-            with m1: st.markdown(f"<div class='metric-card'><h3>Total Efetivo</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
-            with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
-            with m3: st.markdown(f"<div class='metric-card'><h3>Inativos</h3><h2 style='color: red;'>{len(df[df['status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
+            total_geral = len(df)
+            total_ativos = len(df[df['status'] == 'Ativo'])
+            total_inativos = len(df[df['status'] == 'Inativo'])
+            
+            with m1:
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <div class='metric-icon' style='color: #1E3A8A; background: #DBEAFE;'>👥</div>
+                    <h3>Total Efetivo</h3>
+                    <h2 style='color: #1E3A8A;'>{total_geral}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <div class='metric-icon' style='color: #15803D; background: #DCFCE7;'>✅</div>
+                    <h3>Ativos na Obra</h3>
+                    <h2 style='color: #15803D;'>{total_ativos}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <div class='metric-icon' style='color: #B91C1C; background: #FEE2E2;'>🚫</div>
+                    <h3>Inativos</h3>
+                    <h2 style='color: #B91C1C;'>{total_inativos}</h2>
+                </div>
+                """, unsafe_allow_html=True)
                      
             
             df_ativos = df[df['status'] == 'Ativo'].copy()
@@ -702,9 +762,34 @@ with aba_view[3]:
         df = db.get_funcionarios()
         if df is not None and not df.empty:
             m1, m2, m3 = st.columns(3)
-            with m1: st.markdown(f"<div class='metric-card'><h3>Total Efetivo</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
-            with m2: st.markdown(f"<div class='metric-card'><h3>Ativos na Obra</h3><h2 style='color: green;'>{len(df[df['status'] == 'Ativo'])}</h2></div>", unsafe_allow_html=True)
-            with m3: st.markdown(f"<div class='metric-card'><h3>Inativos</h3><h2 style='color: red;'>{len(df[df['status'] == 'Inativo'])}</h2></div>", unsafe_allow_html=True)
+            total_geral = len(df)
+            total_ativos = len(df[df['status'] == 'Ativo'])
+            total_inativos = len(df[df['status'] == 'Inativo'])
+            
+            with m1:
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <div class='metric-icon' style='color: #1E3A8A; background: #DBEAFE;'>👥</div>
+                    <h3>Total Efetivo</h3>
+                    <h2 style='color: #1E3A8A;'>{total_geral}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <div class='metric-icon' style='color: #15803D; background: #DCFCE7;'>✅</div>
+                    <h3>Ativos na Obra</h3>
+                    <h2 style='color: #15803D;'>{total_ativos}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <div class='metric-icon' style='color: #B91C1C; background: #FEE2E2;'>🚫</div>
+                    <h3>Inativos</h3>
+                    <h2 style='color: #B91C1C;'>{total_inativos}</h2>
+                </div>
+                """, unsafe_allow_html=True)
             
             df_ativos = df[df['status'] == 'Ativo'].copy()
             if df_ativos is not None and not df_ativos.empty:
