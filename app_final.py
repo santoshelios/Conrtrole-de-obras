@@ -394,16 +394,22 @@ def render_pluviometria(key_suffix=""):
 
     @st.cache_data(ttl=1800)
     def get_forecast():
-        url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": -23.505,
-            "longitude": -46.879,
-            "daily": "precipitation_sum",
-            "timezone": "America/Sao_Paulo",
-            "forecast_days": 7
-        }
-        r = requests.get(url, params=params, timeout=20)
-        return r.json().get("daily", {})
+        try:
+            url = "https://api.open-meteo.com/v1/forecast"
+            params = {
+                "latitude": -23.505,
+                "longitude": -46.879,
+                "daily": "precipitation_sum",
+                "timezone": "America/Sao_Paulo",
+                "forecast_days": 7
+            }
+            # Adicionado verify=False para evitar erro de SSL no Streamlit Cloud
+            r = requests.get(url, params=params, timeout=20, verify=False)
+            r.raise_for_status()
+            return r.json().get("daily", {})
+        except Exception as e:
+            st.warning(f"Não foi possível carregar a previsão do tempo: {e}")
+            return {}
 
     prev = get_forecast()
 
