@@ -485,44 +485,115 @@ with aba_view[0]:
         col_status = 'Status' if 'Status' in df_hist.columns else ('Status_Val' if 'Status_Val' in df_hist.columns else None)
         
         if col_status:
-            # 3. Forçamos o Status para numérico e filtramos RIGOROSAMENTE apenas Status = 1
+            # 3. Forçamos o Status para numérico e filtramos RIGOROSAMENTE apenas Status = 1 (Presente)
             df_hist[col_status] = pd.to_numeric(df_hist[col_status], errors='coerce')
             df_hist = df_hist[df_hist[col_status] == 1]
 
         if not df_hist.empty:
-            # 4. Buscamos o cadastro de funcionários para obter o tipo de MO (MOD/MOI)
+            # 4. Cruzamento com Cadastro para obter MOI/MOD (Paridade Total com Gráfico de Barras)
             df_cadastro = db.get_funcionarios()
-
             if df_cadastro is not None and not df_cadastro.empty:
-                # 5. Preparamos as matrículas para o cruzamento (JOIN)
-                # Garantimos que não haja duplicatas no cadastro para não inflar o merge
+                # Limpeza do cadastro para evitar duplicidades
                 df_cad_clean = df_cadastro[['matricula', 'mo']].copy()
                 df_cad_clean['matricula'] = pd.to_numeric(df_cad_clean['matricula'], errors='coerce')
                 df_cad_clean = df_cad_clean.drop_duplicates(subset=['matricula'])
                 
+                # Preparação do histórico
                 df_hist['Matricula'] = pd.to_numeric(df_hist['Matricula'], errors='coerce')
-
-                # 6. Trazemos o tipo de MO do cadastro
-                df_mo_info = df_cad_clean.rename(columns={'matricula': 'Matricula', 'mo': 'MO_Tipo'})
                 
-                # 7. Fazemos o merge para classificar cada registro de presença
-                if 'MO_Tipo' in df_hist.columns: df_hist = df_hist.drop(columns=['MO_Tipo'])
+                # Merge para classificar cada registro de presença
+                df_mo_info = df_cad_clean.rename(columns={'matricula': 'Matricula', 'mo': 'MO_Tipo'})
                 df_hist = df_hist.merge(df_mo_info, on='Matricula', how='left')
-                df_hist['MO_Tipo'] = df_hist['MO_Tipo'].fillna('NÃO CADASTRADO')
+                
+                # Padronização
+                df_hist['MO_Tipo'] = df_hist['MO_Tipo'].fillna('NÃO CADASTRADO').astype(str).str.upper().str.strip()
 
-                # 8. Criamos a base de datas para o gráfico não ter buracos
+                # --- CÁLCULO DE HHT (HOMEM-HORA TRABALHADO) ---
+                df_jornada = db.get_jornada_padrao()
+                dict_jornada = {int(row['dia_semana']): float(row['carga_horas']) for _, row in df_jornada.iterrows()} if not df_jornada.empty else {}
+                
+                # Adiciona dia da semana (0=Segunda, 6=Domingo)
+                df_hist['dia_semana'] = pd.to_datetime(df_hist['Data']).dt.dayofweek
+                df_hist['carga_h'] = df_hist['dia_semana'].map(dict_jornada).fillna(0)
+                
+                # Calcula HHT por tipo de MO no período
+                hht_mod = df_hist[df_hist['MO_Tipo'] == 'MOD']['carga_h'].sum()
+                hht_moi = df_hist[df_hist['MO_Tipo'] == 'MOI']['carga_h'].sum()
+
+                # --- CÁLCULO DE PERFORMANCE EM HOMEM-HORA (HH) ---
+                df_hist_obra = db.get_histograma()
+                if df_hist_obra is not None and not df_hist_obra.empty:
+                    df_hist_obra['data'] = pd.to_datetime(df_hist_obra['data']).dt.date
+                    df_hist_obra['dia_semana'] = pd.to_datetime(df_hist_obra['data']).dt.dayofweek
+                    df_hist_obra['carga_h'] = df_hist_obra['dia_semana'].map(dict_jornada).fillna(0)
+                    
+                    # 1. HH Previsto no Período
+                    df_prev_periodo = df_hist_obra[(df_hist_obra['data'] >= d_ini) & (df_hist_obra['data'] <= d_fim)].copy()
+                    hh_prev_mod_periodo = (df_prev_periodo['qtd_prevista_mod'] * df_prev_periodo['carga_h']).sum()
+                    hh_prev_moi_periodo = (df_prev_periodo['qtd_prevista_moi'] * df_prev_periodo['carga_h']).sum()
+                    
+                    # 2. HH Realizado no Período (já calculado em hht_mod e hht_moi)
+                    hh_real_mod_periodo = hht_mod
+                    hh_real_moi_periodo = hht_moi
+                    
+                    # 3. HH Acumulado (Desde o início até a data final do filtro)
+                    # Previsto Acumulado
+                    df_prev_acum = df_hist_obra[df_hist_obra['data'] <= d_fim].copy()
+                    hh_prev_mod_acum = (df_prev_acum['qtd_prevista_mod'] * df_prev_acum['carga_h']).sum()
+                    hh_prev_moi_acum = (df_prev_acum['qtd_prevista_moi'] * df_prev_acum['carga_h']).sum()
+                    
+                    # Realizado Acumulado
+                    df_real_acum = df_ef[(df_ef['Data'] <= d_fim)].copy()
+                    col_st = 'Status' if 'Status' in df_real_acum.columns else ('Status_Val' if 'Status_Val' in df_real_acum.columns else None)
+                    if col_st:
+                        df_real_acum[col_st] = pd.to_numeric(df_real_acum[col_st], errors='coerce')
+                        df_real_acum = df_real_acum[df_real_acum[col_st] == 1]
+                    
+                    df_real_acum['Matricula'] = pd.to_numeric(df_real_acum['Matricula'], errors='coerce')
+                    df_real_acum = df_real_acum.merge(df_mo_info, on='Matricula', how='left')
+                    df_real_acum['MO_Tipo'] = df_real_acum['MO_Tipo'].fillna('N/A').astype(str).str.upper().str.strip()
+                    df_real_acum['dia_semana'] = pd.to_datetime(df_real_acum['Data']).dt.dayofweek
+                    df_real_acum['carga_h'] = df_real_acum['dia_semana'].map(dict_jornada).fillna(0)
+                    
+                    hh_real_mod_acum = df_real_acum[df_real_acum['MO_Tipo'] == 'MOD']['carga_h'].sum()
+                    hh_real_moi_acum = df_real_acum[df_real_acum['MO_Tipo'] == 'MOI']['carga_h'].sum()
+
+                    # Exibição dos Indicadores de Performance em HH
+                    st.markdown("#### 📊 Performance de Homem-Hora (HH) - Previsto vs Realizado")
+                    
+                    # --- MOD ---
+                    st.markdown("##### 🛠️ Mão de Obra Direta (MOD)")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #2563EB;'>{hh_prev_mod_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
+                    with c2:
+                        st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{hh_real_mod_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
+                    with c3:
+                        st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #1E3A8A;'>{hh_real_mod_acum:,.0f} h</h2></div>", unsafe_allow_html=True)
+                    
+                    # --- MOI ---
+                    st.markdown("##### 👔 Mão de Obra Indireta (MOI)")
+                    c4, c5, c6 = st.columns(3)
+                    with c4:
+                        st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #F59E0B;'>{hh_prev_moi_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
+                    with c5:
+                        st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{hh_real_moi_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
+                    with c6:
+                        st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #B45309;'>{hh_real_moi_acum:,.0f} h</h2></div>", unsafe_allow_html=True)
+
+                # 5. Criamos a base de datas para o gráfico não ter buracos
                 intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
                 df_full_base = pd.DataFrame({'Data': pd.to_datetime(intervalo_datas).date}, columns=['Data'])
 
                 fig_hist = go.Figure()
                 cores_mo = {'MOD': '#2563EB', 'MOI': '#F59E0B'}
 
-                # 9. Geramos as linhas para MOD e MOI
+                # 6. Geramos as linhas para MOD e MOI
                 for tipo in ['MOD', 'MOI']:
                     # Filtra os presentes (Status 1) que pertencem ao tipo de MO atual
                     df_tipo = df_hist[df_hist['MO_Tipo'] == tipo].copy()
                     
-                    # Agrupa por data contando registros únicos (paridade com gráfico de barras)
+                    # Agrupa por data contando registros (paridade total com gráfico de barras)
                     df_count = (
                         df_tipo.groupby('Data').size()
                         .reset_index(name='Quantidade')
@@ -549,7 +620,7 @@ with aba_view[0]:
                         hovertemplate="<b>%{x|%d/%m/%Y}</b><br>Tipo: " + tipo + "<br>Qtd: %{y}<extra></extra>"
                     ))
 
-                # 10. Configurações visuais do gráfico
+                # 7. Configurações visuais do gráfico
                 fig_hist.update_layout(
                     title='Evolução do Efetivo Presente por Tipo de MO (Status = 1)',
                     xaxis_title='Data',
@@ -567,37 +638,37 @@ with aba_view[0]:
 
                 st.plotly_chart(fig_hist, use_container_width=True)
 
-            else:
-                # Fallback: gráfico único caso o cadastro não esteja disponível
-                df_hist_count = (
-                    df_hist.groupby('Data')['Matricula']
-                    .nunique()
-                    .reset_index(name='Quantidade')
-                )
-                intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
-                df_full = pd.DataFrame({'Data': intervalo_datas})
-                df_hist_count['Data'] = pd.to_datetime(df_hist_count['Data'])
-                df_full = (
-                    df_full
-                    .merge(df_hist_count, on='Data', how='left')
-                    .fillna(0)
-                )
-                df_full['Quantidade'] = df_full['Quantidade'].astype(int)
-                fig_hist = px.line(
-                    df_full,
-                    x='Data',
-                    y='Quantidade',
-                    title='Evolução do Efetivo Presente',
-                    markers=True,
-                    line_shape='spline',
-                    text='Quantidade'
-                )
-                fig_hist.update_traces(
-                    line=dict(width=2.5, color='#2563EB'),
-                    marker=dict(size=8, color='#1E3A8A'),
-                    textposition='top center'
-                )
-                st.plotly_chart(fig_hist, use_container_width=True)
+        else:
+            # Fallback: gráfico único caso o cadastro não esteja disponível
+            df_hist_count = (
+                df_hist.groupby('Data')['Matricula']
+                .nunique()
+                .reset_index(name='Quantidade')
+            )
+            intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
+            df_full = pd.DataFrame({'Data': intervalo_datas})
+            df_hist_count['Data'] = pd.to_datetime(df_hist_count['Data'])
+            df_full = (
+                df_full
+                .merge(df_hist_count, on='Data', how='left')
+                .fillna(0)
+            )
+            df_full['Quantidade'] = df_full['Quantidade'].astype(int)
+            fig_hist = px.line(
+                df_full,
+                x='Data',
+                y='Quantidade',
+                title='Evolução do Efetivo Presente',
+                markers=True,
+                line_shape='spline',
+                text='Quantidade'
+            )
+            fig_hist.update_traces(
+                line=dict(width=2.5, color='#2563EB'),
+                marker=dict(size=8, color='#1E3A8A'),
+                textposition='top center'
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
 
 
         st.markdown("---")

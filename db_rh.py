@@ -256,12 +256,15 @@ def add_efetivo_diario_batch(df, usuario):
             if hasattr(data_val, 'to_pydatetime'): data_val = data_val.to_pydatetime().date()
             elif hasattr(data_val, 'date'): data_val = data_val.date()
             
+            # Captura o valor real da coluna Status da planilha (Coluna F)
+            status_val = int(row['Status']) if 'Status' in row else 1
+            
             data_to_insert.append((
                 data_val, 
                 str(row['Matricula']), 
                 str(row['Nome']), 
                 str(row['Funcao']), 
-                1, 
+                status_val, 
                 str(row['Situacao'])
             ))
         
@@ -282,6 +285,12 @@ def add_efetivo_diario_batch(df, usuario):
 def delete_efetivo_por_data(data, usuario):
     sql = "DELETE FROM efetivo_diario WHERE data=%s"
     return execute_non_query(sql, (data,), "DELETE", "efetivo_diario", usuario)
+
+def get_jornada_padrao():
+    return run_query("SELECT dia_semana, carga_horas FROM jornada_padrao")
+
+def get_histograma():
+    return run_query("SELECT data, qtd_prevista_mod, qtd_prevista_moi FROM histograma_obra ORDER BY data")
 
 # =========================
 # PLUVIOMETRIA
