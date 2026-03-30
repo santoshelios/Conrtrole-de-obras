@@ -480,112 +480,140 @@ with aba_view[0]:
             sit_filtro = st.selectbox("Filtrar Situação", situacoes_disp)
         
         
-        # ===== HISTÓRICO APENAS STATUS = 1 (PRESENTE) - MOI e MOD =====
-        # 1. Filtramos o período selecionado
+        # ===== PROCESSAMENTO DE DADOS PARA INDICADORES E GRÁFICOS =====
+        
+        # 1. Cadastro de Funcionários (para classificação MOI/MOD)
+        df_cadastro = db.get_funcionarios()
+        df_mo_info = pd.DataFrame(columns=['Matricula', 'MO_Tipo'])
+        if df_cadastro is not None and not df_cadastro.empty:
+            df_cad_clean = df_cadastro[['matricula', 'mo']].copy()
+            df_cad_clean['matricula'] = pd.to_numeric(df_cad_clean['matricula'], errors='coerce')
+            df_cad_clean = df_cad_clean.drop_duplicates(subset=['matricula'])
+            df_mo_info = df_cad_clean.rename(columns={'matricula': 'Matricula', 'mo': 'MO_Tipo'})
+
+        # 2. Jornada Padrão
+        df_jornada = db.get_jornada_padrao()
+        dict_jornada = {int(row['dia_semana']): float(row['carga_horas']) for _, row in df_jornada.iterrows()} if not df_jornada.empty else {}
+
+        # 3. Filtramos o período selecionado para o Realizado
         df_hist = df_ef[
             (df_ef['Data'] >= d_ini) &
             (df_ef['Data'] <= d_fim)
         ].copy()
 
-        # 2. Identificamos a coluna de Status (pode ser 'Status' ou 'Status_Val')
+        # 4. Processamento do Realizado (Período)
+        hht_mod, hht_moi = 0, 0
         col_status = 'Status' if 'Status' in df_hist.columns else ('Status_Val' if 'Status_Val' in df_hist.columns else None)
         
         if col_status:
-            # 3. Forçamos o Status para numérico e filtramos RIGOROSAMENTE apenas Status = 1 (Presente)
             df_hist[col_status] = pd.to_numeric(df_hist[col_status], errors='coerce')
             df_hist = df_hist[df_hist[col_status] == 1]
-
+        
         if not df_hist.empty:
-            # 4. Cruzamento com Cadastro para obter MOI/MOD (Paridade Total com Gráfico de Barras)
-            df_cadastro = db.get_funcionarios()
-            if df_cadastro is not None and not df_cadastro.empty:
-                # Limpeza do cadastro para evitar duplicidades
-                df_cad_clean = df_cadastro[['matricula', 'mo']].copy()
-                df_cad_clean['matricula'] = pd.to_numeric(df_cad_clean['matricula'], errors='coerce')
-                df_cad_clean = df_cad_clean.drop_duplicates(subset=['matricula'])
-                
-                # Preparação do histórico
-                df_hist['Matricula'] = pd.to_numeric(df_hist['Matricula'], errors='coerce')
-                
-                # Merge para classificar cada registro de presença
-                df_mo_info = df_cad_clean.rename(columns={'matricula': 'Matricula', 'mo': 'MO_Tipo'})
-                df_hist = df_hist.merge(df_mo_info, on='Matricula', how='left')
-                
-                # Padronização
-                df_hist['MO_Tipo'] = df_hist['MO_Tipo'].fillna('NÃO CADASTRADO').astype(str).str.upper().str.strip()
+            df_hist['Matricula'] = pd.to_numeric(df_hist['Matricula'], errors='coerce')
+            df_hist = df_hist.merge(df_mo_info, on='Matricula', how='left')
+            df_hist['MO_Tipo'] = df_hist['MO_Tipo'].fillna('NÃO CADASTRADO').astype(str).str.upper().str.strip()
+            df_hist['dia_semana'] = pd.to_datetime(df_hist['Data']).dt.dayofweek
+            df_hist['carga_h'] = df_hist['dia_semana'].map(dict_jornada).fillna(0)
+            hht_mod = df_hist[df_hist['MO_Tipo'] == 'MOD']['carga_h'].sum()
+            hht_moi = df_hist[df_hist['MO_Tipo'] == 'MOI']['carga_h'].sum()
 
-                # --- CÁLCULO DE HHT (HOMEM-HORA TRABALHADO) ---
-                df_jornada = db.get_jornada_padrao()
-                dict_jornada = {int(row['dia_semana']): float(row['carga_horas']) for _, row in df_jornada.iterrows()} if not df_jornada.empty else {}
+        # 5. Processamento do Histograma (Previsto)
+        df_hist_obra = db.get_histograma()
+        if df_hist_obra is not None and not df_hist_obra.empty:
+            df_hist_obra['data'] = pd.to_datetime(df_hist_obra['data']).dt.date
+            df_hist_obra['dia_semana'] = pd.to_datetime(df_hist_obra['data']).dt.dayofweek
+            df_hist_obra['carga_h'] = df_hist_obra['dia_semana'].map(dict_jornada).fillna(0)
+            
+            # HH Previsto no Período
+            df_prev_periodo = df_hist_obra[(df_hist_obra['data'] >= d_ini) & (df_hist_obra['data'] <= d_fim)].copy()
+            hh_prev_mod_periodo = (df_prev_periodo['qtd_prevista_mod'] * df_prev_periodo['carga_h']).sum()
+            hh_prev_moi_periodo = (df_prev_periodo['qtd_prevista_moi'] * df_prev_periodo['carga_h']).sum()
+            
+            # HH Realizado Acumulado
+            hh_real_mod_acum, hh_real_moi_acum = 0, 0
+            if df_ef is not None and not df_ef.empty:
+                df_real_acum = df_ef[(df_ef['Data'] <= d_fim)].copy()
+                col_st = 'Status' if 'Status' in df_real_acum.columns else ('Status_Val' if 'Status_Val' in df_real_acum.columns else None)
+                if col_st:
+                    df_real_acum[col_st] = pd.to_numeric(df_real_acum[col_st], errors='coerce')
+                    df_real_acum = df_real_acum[df_real_acum[col_st] == 1]
                 
-                # Adiciona dia da semana (0=Segunda, 6=Domingo)
-                df_hist['dia_semana'] = pd.to_datetime(df_hist['Data']).dt.dayofweek
-                df_hist['carga_h'] = df_hist['dia_semana'].map(dict_jornada).fillna(0)
-                
-                # Calcula HHT por tipo de MO no período
-                hht_mod = df_hist[df_hist['MO_Tipo'] == 'MOD']['carga_h'].sum()
-                hht_moi = df_hist[df_hist['MO_Tipo'] == 'MOI']['carga_h'].sum()
-
-                # --- CÁLCULO DE PERFORMANCE EM HOMEM-HORA (HH) ---
-                df_hist_obra = db.get_histograma()
-                if df_hist_obra is not None and not df_hist_obra.empty:
-                    df_hist_obra['data'] = pd.to_datetime(df_hist_obra['data']).dt.date
-                    df_hist_obra['dia_semana'] = pd.to_datetime(df_hist_obra['data']).dt.dayofweek
-                    df_hist_obra['carga_h'] = df_hist_obra['dia_semana'].map(dict_jornada).fillna(0)
-                    
-                    # 1. HH Previsto no Período
-                    df_prev_periodo = df_hist_obra[(df_hist_obra['data'] >= d_ini) & (df_hist_obra['data'] <= d_fim)].copy()
-                    hh_prev_mod_periodo = (df_prev_periodo['qtd_prevista_mod'] * df_prev_periodo['carga_h']).sum()
-                    hh_prev_moi_periodo = (df_prev_periodo['qtd_prevista_moi'] * df_prev_periodo['carga_h']).sum()
-                    
-                    # 2. HH Realizado no Período (já calculado em hht_mod e hht_moi)
-                    hh_real_mod_periodo = hht_mod
-                    hh_real_moi_periodo = hht_moi
-                    
-                    # 3. HH Acumulado (Desde o início até a data final do filtro)
-                    # Previsto Acumulado
-                    df_prev_acum = df_hist_obra[df_hist_obra['data'] <= d_fim].copy()
-                    hh_prev_mod_acum = (df_prev_acum['qtd_prevista_mod'] * df_prev_acum['carga_h']).sum()
-                    hh_prev_moi_acum = (df_prev_acum['qtd_prevista_moi'] * df_prev_acum['carga_h']).sum()
-                    
-                    # Realizado Acumulado
-                    df_real_acum = df_ef[(df_ef['Data'] <= d_fim)].copy()
-                    col_st = 'Status' if 'Status' in df_real_acum.columns else ('Status_Val' if 'Status_Val' in df_real_acum.columns else None)
-                    if col_st:
-                        df_real_acum[col_st] = pd.to_numeric(df_real_acum[col_st], errors='coerce')
-                        df_real_acum = df_real_acum[df_real_acum[col_st] == 1]
-                    
+                if not df_real_acum.empty:
                     df_real_acum['Matricula'] = pd.to_numeric(df_real_acum['Matricula'], errors='coerce')
                     df_real_acum = df_real_acum.merge(df_mo_info, on='Matricula', how='left')
                     df_real_acum['MO_Tipo'] = df_real_acum['MO_Tipo'].fillna('N/A').astype(str).str.upper().str.strip()
                     df_real_acum['dia_semana'] = pd.to_datetime(df_real_acum['Data']).dt.dayofweek
                     df_real_acum['carga_h'] = df_real_acum['dia_semana'].map(dict_jornada).fillna(0)
-                    
                     hh_real_mod_acum = df_real_acum[df_real_acum['MO_Tipo'] == 'MOD']['carga_h'].sum()
                     hh_real_moi_acum = df_real_acum[df_real_acum['MO_Tipo'] == 'MOI']['carga_h'].sum()
 
-                    # Exibição dos Indicadores de Performance em HH
-                    st.markdown("#### 📊 Performance de Homem-Hora (HH) - Previsto vs Realizado")
-                    
-                    # --- MOD ---
-                    st.markdown("##### 🛠️ Mão de Obra Direta (MOD)")
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #2563EB;'>{hh_prev_mod_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
-                    with c2:
-                        st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{hh_real_mod_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
-                    with c3:
-                        st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #1E3A8A;'>{hh_real_mod_acum:,.0f} h</h2></div>", unsafe_allow_html=True)
-                    
-                    # --- MOI ---
-                    st.markdown("##### 👔 Mão de Obra Indireta (MOI)")
-                    c4, c5, c6 = st.columns(3)
-                    with c4:
-                        st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #F59E0B;'>{hh_prev_moi_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
-                    with c5:
-                        st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{hh_real_moi_periodo:,.0f} h</h2></div>", unsafe_allow_html=True)
-                    with c6:
-                        st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #B45309;'>{hh_real_moi_acum:,.0f} h</h2></div>", unsafe_allow_html=True)
+            # Função auxiliar para formatar números no padrão brasileiro (ponto como milhar)
+            def fmt_br(valor):
+                return f"{valor:,.0f}".replace(",", ".")
+
+            # Exibição dos Indicadores de Performance em HH
+            st.markdown("#### 📊 Performance de Homem-Hora (HH) - Previsto vs Realizado")
+            
+            # --- LÓGICA DE ALERTAS DE DESVIO ---
+            def check_alert(prev, real, label):
+                if prev > 0:
+                    desvio = ((real - prev) / prev) * 100
+                    if abs(desvio) > 10:
+                        cor = "red" if abs(desvio) > 20 else "orange"
+                        icone = "🚨" if abs(desvio) > 20 else "⚠️"
+                        tipo = "ACIMA" if desvio > 0 else "ABAIXO"
+                        st.markdown(f"""
+                        <div style='padding: 10px; border-radius: 8px; background-color: {cor}22; border: 1px solid {cor}; margin-bottom: 15px;'>
+                            <span style='color: {cor}; font-weight: bold;'>{icone} ALERTA DE DESVIO ({label}):</span> 
+                            O realizado está <b>{abs(desvio):.1f}% {tipo}</b> do previsto no período.
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            check_alert(hh_prev_mod_periodo, hht_mod, "MOD")
+            check_alert(hh_prev_moi_periodo, hht_moi, "MOI")
+
+            # --- MOD ---
+            st.markdown("##### 🛠️ Mão de Obra Direta (MOD)")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #2563EB;'>{fmt_br(hh_prev_mod_periodo)} h</h2></div>", unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{fmt_br(hht_mod)} h</h2></div>", unsafe_allow_html=True)
+            with c3:
+                st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #1E3A8A;'>{fmt_br(hh_real_mod_acum)} h</h2></div>", unsafe_allow_html=True)
+            
+            # --- MOI ---
+            st.markdown("##### 👔 Mão de Obra Indireta (MOI)")
+            c4, c5, c6 = st.columns(3)
+            with c4:
+                st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #F59E0B;'>{fmt_br(hh_prev_moi_periodo)} h</h2></div>", unsafe_allow_html=True)
+            with c5:
+                st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{fmt_br(hht_moi)} h</h2></div>", unsafe_allow_html=True)
+            with c6:
+                st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #B45309;'>{fmt_br(hh_real_moi_acum)} h</h2></div>", unsafe_allow_html=True)
+
+        # Exibição dos Cards de HHT (Mantido para compatibilidade visual)
+        st.markdown("#### ⏱️ Homem-Hora Trabalhado (HHT) no Período")
+        c_hht1, c_hht2 = st.columns(2)
+        with c_hht1:
+            st.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-icon' style='color: #2563EB; background: #DBEAFE;'>🛠️</div>
+                <h3>HHT Total (MOD)</h3>
+                <h2 style='color: #2563EB;'>{fmt_br(hht_mod)} h</h2>
+            </div>
+            """, unsafe_allow_html=True)
+        with c_hht2:
+            st.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-icon' style='color: #F59E0B; background: #FEF3C7;'>👔</div>
+                <h3>HHT Total (MOI)</h3>
+                <h2 style='color: #F59E0B;'>{fmt_br(hht_moi)} h</h2>
+            </div>
+            """, unsafe_allow_html=True)
+
+        if not df_hist.empty:
 
                 # 5. Criamos a base de datas para o gráfico não ter buracos
                 intervalo_datas = pd.date_range(start=d_ini, end=d_fim)
