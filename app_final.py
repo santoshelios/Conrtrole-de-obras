@@ -555,43 +555,73 @@ with aba_view[0]:
             # Exibição dos Indicadores de Performance em HH
             st.markdown("#### 📊 Performance de Homem-Hora (HH) - Previsto vs Realizado")
             
-            # --- LÓGICA DE ALERTAS DE DESVIO ---
-            def check_alert(prev, real, label):
+            # --- FUNÇÃO PARA GERAR CARD DE DESVIO ---
+            def render_deviation_card(prev, real, label):
+                """Renderiza um card de desvio com cores baseadas na severidade"""
                 if prev > 0:
-                    desvio = ((real - prev) / prev) * 100
-                    if abs(desvio) > 10:
-                        cor = "red" if abs(desvio) > 20 else "orange"
-                        icone = "🚨" if abs(desvio) > 20 else "⚠️"
-                        tipo = "ACIMA" if desvio > 0 else "ABAIXO"
-                        st.markdown(f"""
-                        <div style='padding: 10px; border-radius: 8px; background-color: {cor}22; border: 1px solid {cor}; margin-bottom: 15px;'>
-                            <span style='color: {cor}; font-weight: bold;'>{icone} ALERTA DE DESVIO ({label}):</span> 
-                            O realizado está <b>{abs(desvio):.1f}% {tipo}</b> do previsto no período.
+                    desvio = real - prev
+                    desvio_pct = ((real - prev) / prev) * 100
+                    
+                    # Determina cor e ícone baseado no desvio
+                    if desvio_pct > 20:
+                        cor_valor = "#DC2626"
+                        cor_bg = "#FEE2E2"
+                        icone = "🚨"
+                        tipo_alerta = "CRÍTICO"
+                    elif desvio_pct > 10:
+                        cor_valor = "#D97706"
+                        cor_bg = "#FEF3C7"
+                        icone = "⚠️"
+                        tipo_alerta = "ATENÇÃO"
+                    elif desvio_pct < -10:
+                        cor_valor = "#0369A1"
+                        cor_bg = "#E0F2FE"
+                        icone = "ℹ️"
+                        tipo_alerta = "INFO"
+                    else:
+                        cor_valor = "#059669"
+                        cor_bg = "#ECFDF5"
+                        icone = "✅"
+                        tipo_alerta = "OK"
+                    
+                    direcao = "ACIMA" if desvio_pct > 0 else "ABAIXO"
+                    
+                    st.markdown(f"""
+                    <div class='metric-card' style='background-color: {cor_bg};'>
+                        <h3 style='color: {cor_valor};'>{icone} Desvio {label}</h3>
+                        <h2 style='color: {cor_valor};'>{abs(desvio_pct):.1f}%</h2>
+                        <div style='font-size: 12px; color: {cor_valor}; margin-top: 8px;'>
+                            <b>{tipo_alerta}</b> - {abs(desvio_pct):.1f}% {direcao}
                         </div>
-                        """, unsafe_allow_html=True)
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class='metric-card' style='background-color: #F3F4F6;'>
+                        <h3 style='color: #6B7280;'>- Desvio {label}</h3>
+                        <h2 style='color: #9CA3AF;'>--</h2>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-            check_alert(hh_prev_mod_periodo, hht_mod, "MOD")
-            check_alert(hh_prev_moi_periodo, hht_moi, "MOI")
-
-            # --- MOD ---
+            # --- MOD (COM 3 CARDS: Previsto, Acumulado, Desvio) ---
             st.markdown("##### 🛠️ Mão de Obra Direta (MOD)")
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #2563EB;'>{fmt_br(hh_prev_mod_periodo)} h</h2></div>", unsafe_allow_html=True)
             with c2:
-                st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{fmt_br(hht_mod)} h</h2></div>", unsafe_allow_html=True)
-            with c3:
                 st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #1E3A8A;'>{fmt_br(hh_real_mod_acum)} h</h2></div>", unsafe_allow_html=True)
+            with c3:
+                render_deviation_card(hh_prev_mod_periodo, hht_mod, "MOD")
             
-            # --- MOI ---
+            # --- MOI (COM 3 CARDS: Previsto, Acumulado, Desvio) ---
             st.markdown("##### 👔 Mão de Obra Indireta (MOI)")
             c4, c5, c6 = st.columns(3)
             with c4:
                 st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #F59E0B;'>{fmt_br(hh_prev_moi_periodo)} h</h2></div>", unsafe_allow_html=True)
             with c5:
-                st.markdown(f"<div class='metric-card'><h3>HH Realizado (Período)</h3><h2 style='color: #15803D;'>{fmt_br(hht_moi)} h</h2></div>", unsafe_allow_html=True)
-            with c6:
                 st.markdown(f"<div class='metric-card'><h3>HH Acumulado (Real)</h3><h2 style='color: #B45309;'>{fmt_br(hh_real_moi_acum)} h</h2></div>", unsafe_allow_html=True)
+            with c6:
+                render_deviation_card(hh_prev_moi_periodo, hht_moi, "MOI")
 
         # Exibição dos Cards de HHT (Mantido para compatibilidade visual)
         st.markdown("#### ⏱️ Homem-Hora Trabalhado (HHT) no Período")
