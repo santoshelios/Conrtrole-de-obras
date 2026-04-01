@@ -275,7 +275,7 @@ with st.sidebar:
     if not st.session_state.logged_in:
         user = st.text_input("Usuário", placeholder="Digite seu usuário", autocomplete='off')
         password = st.text_input("Senha", type="password", placeholder="Digite sua senha", autocomplete='new-password')
-        if st.button("ENTRAR NO SISTEMA",use_container_width=True):
+        if st.button("ENTRAR NO SISTEMA",width='stretch'):
             if db.check_login(user, password):
                 st.session_state.logged_in = True
                 st.session_state.user_name = user
@@ -320,17 +320,17 @@ def render_pluviometria(key_suffix=""):
         c1, c2, c3, c4 = st.columns([2,2,1,1])
         with c1: st.text_input("Origem / Fonte", "Open-Meteo", disabled=True, key=f"pluv_src_{key_suffix}")
         with c2: data_ref = st.date_input("Data", value=get_now_br().date(), key=f"pluv_date_{key_suffix}")
-        with c3: st.button("🔄 Atualizar", key=f"pluv_refresh_{key_suffix}", use_container_width=True)
+        with c3: st.button("🔄 Atualizar", key=f"pluv_refresh_{key_suffix}", width='stretch')
         with c4:
             # Botão Salvar movido para o topo para usuários logados
-            if st.button("💾 Salvar", key=f"pluv_save_{key_suffix}", use_container_width=True):
+            if st.button("💾 Salvar", key=f"pluv_save_{key_suffix}", width='stretch'):
                 # Como a função precisa retornar data_ref e horas, salvaremos após obter as horas
                 st.session_state[f'save_pluv_{key_suffix}'] = True
     else:
         c1, c2, c3 = st.columns([2,2,1])
         with c1: st.text_input("Origem / Fonte", "Open-Meteo", disabled=True, key=f"pluv_src_{key_suffix}")
         with c2: data_ref = st.date_input("Data", value=get_now_br().date(), key=f"pluv_date_{key_suffix}")
-        with c3: st.button("🔄 Atualizar", key=f"pluv_refresh_{key_suffix}", use_container_width=True)
+        with c3: st.button("🔄 Atualizar", key=f"pluv_refresh_{key_suffix}", width='stretch')
     
     horas = get_pluviometria_cruzada(data_ref)
     total_mm = sum(horas.values())
@@ -434,7 +434,7 @@ def render_pluviometria(key_suffix=""):
             xaxis_title=None
         )
 
-        st.plotly_chart(fig_prev, use_container_width=True)
+        st.plotly_chart(fig_prev, width='stretch')
 
     return data_ref, horas
 
@@ -480,7 +480,7 @@ with aba_view[0]:
             sit_filtro = st.selectbox("Filtrar Situação", situacoes_disp)
         
         
-        # ===== PROCESSAMENTO DE DADOS PARA INDICADORES E GRÁFICOS =====
+        
         
         # 1. Cadastro de Funcionários (para classificação MOI/MOD)
         df_cadastro = db.get_funcionarios()
@@ -553,7 +553,7 @@ with aba_view[0]:
                 return f"{valor:,.0f}".replace(",", ".")
 
             # Exibição dos Indicadores de Performance em HH
-            st.markdown("#### 📊 Performance de Homem-Hora (HH) - Previsto vs Realizado")
+            st.markdown("#### 🧑‍💼⚙️ Performance de Homem-Hora (HH) - Previsto vs Realizado")
             
             # --- FUNÇÃO PARA GERAR CARD DE DESVIO ---
             def render_deviation_card(prev, real, label):
@@ -587,24 +587,24 @@ with aba_view[0]:
                     direcao = "ACIMA" if desvio_pct > 0 else "ABAIXO"
                     
                     st.markdown(f"""
-                    <div class='metric-card' style='background-color: {cor_bg};'>
-                        <h3 style='color: {cor_valor};'>{icone} Desvio {label}</h3>
-                        <h2 style='color: {cor_valor};'>{abs(desvio_pct):.1f}%</h2>
-                        <div style='font-size: 12px; color: {cor_valor}; margin-top: 8px;'>
-                            <b>{tipo_alerta}</b> - {abs(desvio_pct):.1f}% {direcao}
+                    <div class='metric-card' style='background-color: {cor_bg}; min-height: auto; padding: 20px 15px;'>
+                        <h3 style='color: {cor_valor}; font-size: 13px; margin: 0 0 8px 0;'>{icone} Desvio {label}</h3>
+                        <h2 style='color: {cor_valor}; font-size: 32px; margin: 0 0 6px 0;'>{abs(desvio_pct):.1f}%</h2>
+                        <div style='font-size: 11px; color: {cor_valor}; margin: 0; line-height: 1.3;'>
+                            <b>{tipo_alerta}</b><br>{abs(desvio_pct):.1f}% {direcao}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
-                    <div class='metric-card' style='background-color: #F3F4F6;'>
-                        <h3 style='color: #6B7280;'>- Desvio {label}</h3>
-                        <h2 style='color: #9CA3AF;'>--</h2>
+                    <div class='metric-card' style='background-color: #F3F4F6; min-height: auto; padding: 20px 15px;'>
+                        <h3 style='color: #6B7280; font-size: 13px; margin: 0 0 8px 0;'>- Desvio {label}</h3>
+                        <h2 style='color: #9CA3AF; font-size: 32px; margin: 0;'>--</h2>
                     </div>
                     """, unsafe_allow_html=True)
 
             # --- MOD (COM 3 CARDS: Previsto, Acumulado, Desvio) ---
-            st.markdown("##### 🛠️ Mão de Obra Direta (MOD)")
+            st.markdown("##### 👥 Mão de Obra Direta (MOD)")
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #2563EB;'>{fmt_br(hh_prev_mod_periodo)} h</h2></div>", unsafe_allow_html=True)
@@ -614,7 +614,7 @@ with aba_view[0]:
                 render_deviation_card(hh_prev_mod_periodo, hht_mod, "MOD")
             
             # --- MOI (COM 3 CARDS: Previsto, Acumulado, Desvio) ---
-            st.markdown("##### 👔 Mão de Obra Indireta (MOI)")
+            st.markdown("##### 🧑‍💼 Mão de Obra Indireta (MOI)")
             c4, c5, c6 = st.columns(3)
             with c4:
                 st.markdown(f"<div class='metric-card'><h3>HH Previsto (Período)</h3><h2 style='color: #F59E0B;'>{fmt_br(hh_prev_moi_periodo)} h</h2></div>", unsafe_allow_html=True)
@@ -624,7 +624,7 @@ with aba_view[0]:
                 render_deviation_card(hh_prev_moi_periodo, hht_moi, "MOI")
 
         # Exibição dos Cards de HHT (Mantido para compatibilidade visual)
-        st.markdown("#### ⏱️ Homem-Hora Trabalhado (HHT) no Período")
+        st.markdown("#### 🏭 Homem-Hora Trabalhado (HHT) no Período")
         c_hht1, c_hht2 = st.columns(2)
         with c_hht1:
             st.markdown(f"""
@@ -637,7 +637,7 @@ with aba_view[0]:
         with c_hht2:
             st.markdown(f"""
             <div class='metric-card'>
-                <div class='metric-icon' style='color: #F59E0B; background: #FEF3C7;'>👔</div>
+                <div class='metric-icon' style='color: #F59E0B; background: #FEF3C7;'>🖥️</div>
                 <h3>HHT Total (MOI)</h3>
                 <h2 style='color: #F59E0B;'>{fmt_br(hht_moi)} h</h2>
             </div>
@@ -700,7 +700,7 @@ with aba_view[0]:
                     margin=dict(t=80, b=40, l=40, r=40)
                 )
 
-                st.plotly_chart(fig_hist, use_container_width=True)
+                st.plotly_chart(fig_hist, width='stretch')
 
         else:
             # Fallback: gráfico único caso o cadastro não esteja disponível
@@ -732,7 +732,7 @@ with aba_view[0]:
                 marker=dict(size=8, color='#1E3A8A'),
                 textposition='top center'
             )
-            st.plotly_chart(fig_hist, use_container_width=True)
+            st.plotly_chart(fig_hist, width='stretch')
 
 
         st.markdown("---")
@@ -745,7 +745,7 @@ with aba_view[0]:
             col_graf, col_tab = st.columns([1, 1])
             with col_graf:
                 fig_status = px.bar(df_status_dia, y='Situacao', x='Total', orientation='h', title=f"Distribuição Status - {data_recente.strftime('%d/%m/%Y')}", color_discrete_sequence=['#000000'], text_auto=True)
-                sel_status = st.plotly_chart(fig_status, use_container_width=True, on_select="rerun")
+                sel_status = st.plotly_chart(fig_status, width='stretch', on_select="rerun")
             with col_tab:
                 if sel_status and "selection" in sel_status and "points" in sel_status["selection"] and sel_status["selection"]["points"]:
                     sit_filtrada = sel_status["selection"]["points"][0]["y"]
@@ -827,7 +827,7 @@ with aba_view[1]:
                     xaxis_tickangle = -45
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
 # --- ABA 2: APONTAR HORAS / DASH PRODUTIVIDADE ---
 with aba_view[2]:
@@ -881,14 +881,14 @@ with aba_view[2]:
             df_mes = df_ap[df_ap['Mes_Ano'] == mes_sel]
             df_func_prod = df_mes.groupby('funcao')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_func = px.bar(df_func_prod, x='funcao', y='Horas_Dec', title="Produtividade por Função (Horas)", color_discrete_sequence=['#1E3A8A'], text_auto=True)
-            sel_func = st.plotly_chart(fig_func, use_container_width=True, on_select="rerun")
+            sel_func = st.plotly_chart(fig_func, width='stretch', on_select="rerun")
             df_equip_filtered = df_mes.copy()
             if sel_func and "selection" in sel_func and "points" in sel_func["selection"] and sel_func["selection"]["points"]:
                 func_filtrada = sel_func["selection"]["points"][0]["x"]
                 df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]                
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
-            st.plotly_chart(fig_equip, use_container_width=True)
+            st.plotly_chart(fig_equip, width='stretch')
 
 # --- ABA 3: DASH EFETIVO / CONSULTA GERAL ---
 with aba_view[3]:
@@ -933,7 +933,7 @@ with aba_view[3]:
                 counts.columns = ['Função', 'Quantidade']
                 fig = px.bar(counts, x='Função', y='Quantidade', title="Efetivo por Função (Ativos)", color_discrete_sequence=['#FFD700'], text_auto=True)
                 fig.update_layout(xaxis_tickangle = -45)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
     else:
         st.subheader("📖 Consulta de Efetivo")
         df = db.get_funcionarios()
@@ -946,7 +946,7 @@ with aba_view[3]:
             if f_nome: df_f = df_f[df_f["nome"].str.contains(f_nome, case=False, na=False)]
             if f_mat: df_f = df_f[df_f["matricula"].astype(str).str.contains(f_mat, case=False, na=False)]
             if f_func: df_f = df_f[df_f["funcao"].str.contains(f_func, case=False, na=False)]
-            st.dataframe(df_f.map(lambda x: str(x).upper() if pd.notnull(x) else x), use_container_width=True)
+            st.dataframe(df_f.map(lambda x: str(x).upper() if pd.notnull(x) else x), width='stretch')
 
 # --- ABA 4: DASH PRODUTIVIDADE DINÂMICO / REGISTRO DE HORAS ---
 with aba_view[4]:
@@ -962,19 +962,19 @@ with aba_view[4]:
             df_mes = df_ap[df_ap['Mes_Ano'] == mes_sel]
             df_func_prod = df_mes.groupby('funcao')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_func = px.bar(df_func_prod, x='funcao', y='Horas_Dec', title="Produtividade por Função (Horas)", color_discrete_sequence=['#1E3A8A'], text_auto=True)
-            sel_func = st.plotly_chart(fig_func, use_container_width=True, on_select="rerun")
+            sel_func = st.plotly_chart(fig_func, width='stretch', on_select="rerun")
             df_equip_filtered = df_mes.copy()
             if sel_func and "selection" in sel_func and "points" in sel_func["selection"] and sel_func["selection"]["points"]:
                 func_filtrada = sel_func["selection"]["points"][0]["x"]
                 df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]                
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
-            st.plotly_chart(fig_equip, use_container_width=True)
+            st.plotly_chart(fig_equip, width='stretch')
     else:
         st.subheader("⏱️ Registros de Horas Detalhados")
         df_ap_full = db.get_apontamentos_com_id()
         if df_ap_full is not None and not df_ap_full.empty:
-            st.dataframe(df_ap_full.head(100), use_container_width=True)
+            st.dataframe(df_ap_full.head(100), width='stretch')
             st.info("💡 A exclusão de registros é permitida apenas para administradores.")
 
 # --- ABA 5: CONSULTA GERAL / PLUVIOMETRIA ---
@@ -993,7 +993,7 @@ with aba_view[5]:
             if f_nome: df_f = df_f[df_f["nome"].str.contains(f_nome, case=False, na=False)]
             if f_mat: df_f = df_f[df_f["matricula"].astype(str).str.contains(f_mat, case=False, na=False)]
             if f_func: df_f = df_f[df_f["funcao"].str.contains(f_func, case=False, na=False)]
-            st.dataframe(df_f.map(lambda x: str(x).upper() if pd.notnull(x) else x), use_container_width=True)
+            st.dataframe(df_f.map(lambda x: str(x).upper() if pd.notnull(x) else x), width='stretch')
     else:
         render_pluviometria("pub")
 
@@ -1003,7 +1003,7 @@ with aba_view[6]:
         st.subheader("⏱️ Registros de Horas Detalhados")
         df_ap_full = db.get_apontamentos_com_id()
         if df_ap_full is not None and not df_ap_full.empty:
-            st.dataframe(df_ap_full.head(100), use_container_width=True)
+            st.dataframe(df_ap_full.head(100), width='stretch')
             with st.expander("🗑️ Excluir Registros"):
                 sel_excluir = st.multiselect("Selecione os IDs para remover", df_ap_full['id'].tolist())
                 if st.button("EXCLUIR SELECIONADOS"):
@@ -1020,7 +1020,7 @@ with aba_view[6]:
         if df_h is not None and not df_h.empty:
             df_h['data'] = pd.to_datetime(df_h['data'])
             fig_p = px.bar(df_h.groupby('data')['chuva_mm'].sum().reset_index(), x='data', y='chuva_mm', title="Total Diário de Chuva", text_auto=True)
-            st.plotly_chart(fig_p, use_container_width=True)
+            st.plotly_chart(fig_p, width='stretch')
 
 # Abas exclusivas de Gestão (Logado)
 if st.session_state.logged_in:
@@ -1091,7 +1091,7 @@ if st.session_state.logged_in:
     with aba_view[12]:
         st.subheader("🔍 Auditoria")
         df_logs = db.get_logs()
-        if not df_logs.empty: st.dataframe(df_logs, use_container_width=True)
+        if not df_logs.empty: st.dataframe(df_logs, width='stretch')
         else: st.info("Nenhum log registrado.")
 
     with aba_view[-2]:
@@ -1107,7 +1107,7 @@ if st.session_state.logged_in:
         if df_h is not None and not df_h.empty:
             df_h['data'] = pd.to_datetime(df_h['data'])
             fig_p = px.bar(df_h.groupby('data')['chuva_mm'].sum().reset_index(), x='data', y='chuva_mm', title="Total Diário de Chuva", text_auto=True)
-            st.plotly_chart(fig_p, use_container_width=True)
+            st.plotly_chart(fig_p, width='stretch')
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("<div class='sidebar-footer'><b>GRUPO SANTIN</b><br>Sistema Corporativo de Controle de Obras<br>Business Intelligence • Engenharia • Gestão de Projetos</div>", unsafe_allow_html=True)
