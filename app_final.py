@@ -752,7 +752,7 @@ with aba_view[0]:
                     st.markdown(f"#### Detalhes: {sit_filtrada}")
                     df_detalhe = df_recente[df_recente['Situacao'] == sit_filtrada]
                     dados_func = db.get_funcionarios()
-                    dict_abrev = {str(f[0]): (f[3].upper() if f[3] else f[2].upper()) for _, f in dados_func.iterrows()}
+                    dict_abrev = {str(f['matricula']): (f['abrev'].upper() if f['abrev'] else f['nome'].upper()) for _, f in dados_func.iterrows()}
                     df_detalhe['Abrev'] = df_detalhe['Matricula'].astype(str).map(dict_abrev).fillna(df_detalhe['Funcao'])
                     for a in sorted(df_detalhe['Abrev'].unique()):
                         with st.expander(f"🔸 {a}"):
