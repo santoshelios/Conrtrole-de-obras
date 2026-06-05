@@ -741,7 +741,7 @@ with aba_view[0]:
         df_recente = df_ef[df_ef['Data'] == data_recente]
         if sit_filtro != "TODAS": df_recente = df_recente[df_recente['Situacao'] == sit_filtro]
         if not df_recente.empty:
-            df_status_dia = df_recente.groupby('Situacao').size().reset_index(name='Total')
+            df_status_dia = df_recente.groupby('Situacao').size().reset_index(name='Total').sort_values('Total', ascending=True)
             col_graf, col_tab = st.columns([1, 1])
             with col_graf:
                 fig_status = px.bar(df_status_dia, y='Situacao', x='Total', orientation='h', title=f"Distribuição Status - {data_recente.strftime('%d/%m/%Y')}", color_discrete_sequence=['#000000'], text_auto=True)
@@ -881,6 +881,7 @@ with aba_view[2]:
             df_mes = df_ap[df_ap['Mes_Ano'] == mes_sel]
             df_func_prod = df_mes.groupby('funcao')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_func = px.bar(df_func_prod, x='funcao', y='Horas_Dec', title="Produtividade por Função (Horas)", color_discrete_sequence=['#1E3A8A'], text_auto=True)
+            fig_func.update_layout(xaxis_tickangle=-45)
             sel_func = st.plotly_chart(fig_func, width='stretch', on_select="rerun")
             df_equip_filtered = df_mes.copy()
             if sel_func and "selection" in sel_func and "points" in sel_func["selection"] and sel_func["selection"]["points"]:
@@ -888,6 +889,7 @@ with aba_view[2]:
                 df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]                
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
+            fig_equip.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_equip, width='stretch')
 
 # --- ABA 3: DASH EFETIVO / CONSULTA GERAL ---
@@ -962,6 +964,7 @@ with aba_view[4]:
             df_mes = df_ap[df_ap['Mes_Ano'] == mes_sel]
             df_func_prod = df_mes.groupby('funcao')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_func = px.bar(df_func_prod, x='funcao', y='Horas_Dec', title="Produtividade por Função (Horas)", color_discrete_sequence=['#1E3A8A'], text_auto=True)
+            fig_func.update_layout(xaxis_tickangle=-45)
             sel_func = st.plotly_chart(fig_func, width='stretch', on_select="rerun")
             df_equip_filtered = df_mes.copy()
             if sel_func and "selection" in sel_func and "points" in sel_func["selection"] and sel_func["selection"]["points"]:
@@ -969,6 +972,7 @@ with aba_view[4]:
                 df_equip_filtered = df_equip_filtered[df_equip_filtered['funcao'] == func_filtrada]                
             df_equip_prod = df_equip_filtered.groupby('equipamento')['Horas_Dec'].sum().reset_index().sort_values('Horas_Dec', ascending=False)
             fig_equip = px.bar(df_equip_prod, x='equipamento', y='Horas_Dec', title="Produtividade por Equipamento (Horas)", color_discrete_sequence=['#2563EB'], text_auto=True)
+            fig_equip.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_equip, width='stretch')
     else:
         st.subheader("⏱️ Registros de Horas Detalhados")
